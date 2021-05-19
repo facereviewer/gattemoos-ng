@@ -1,23 +1,19 @@
 secretlounge-ng
 ---------------
 Rewrite of [secretlounge](https://github.com/6697/secretlounge), a bot to make an anonymous group chat on Telegram.
+Further rewritten for furry purposes. This version is pseudonymous instead of anonymous.
 
-## Setup
-```
-$ pip3 install -r requirements.txt
-$ cp config.yaml.example config.yaml
-Edit config.yaml with your favorite text editor.
-$ ./secretlounge-ng
-```
 
 ## @BotFather Setup
-Message [@BotFather](https://t.me/BotFather) to configure your bot as follows:
+1. Message [@BotFather](https://t.me/BotFather)
+2. Say "/newbot"
+3. Give it a name and an ID
+4. Remember to eventually set the userpic and the about text.
+5. `/setprivacy`: enabled
+6. `/setjoingroups`: disabled
+7. `/setcommands`: paste the command list below
 
-* `/setprivacy`: enabled
-* `/setjoingroups`: disabled
-* `/setcommands`: paste the command list below
-
-### Command list
+### Full Command list
 ```
 start - Join the chat (start receiving messages)
 stop - Leave the chat (stop receiving messages)
@@ -34,7 +30,53 @@ adminhelp - Show commands available to admins
 toggledebug - Toggle debug mode (sends back all messages to you)
 togglekarma - Toggle karma notifications
 tripcode - Show or set a tripcode for your messages
+tripcodetoggle - Toggle tripcode to be on by default on messages
 ```
+
+### Trimmed Command List for ease of use
+```
+start - Join the chat (start receiving messages)
+stop - Leave the chat (stop receiving messages)
+users - Find out how many users are in the chat
+info - Get info about your account
+expose - Sign a message with your username
+motd - Show the welcome message
+tripcode - Show or set a tripcode for your messages
+```
+
+## Running on a VPS
+1. Get VPS hosting. Sign up. Purchase.
+3. Open up a terminal or something? There are SSH programs you can use on Windows that might be graphical. You can use Windows Subsystem for Linux (WSL) to run ubuntu or such from a cmd window
+2. `SSH root@xxx.xxx.xxx.xxx` (where the Xs are the server's IP address) using your server's root password
+3. Make a user account to run the bots: `sudo adduser whomever` where 'whomever' is a name you choose. It'll ask you to make a password
+4. Give the new account sudoing rights: `usermod -aG sudo whomever` (Again, 'whomever' is changed to the name of your new account)
+5. `exit` out of there
+6. You can use sftp to transfer files. On Windows, just get WinSCP and set up a connection to 'whomever' at the server's IP address, make sure you're in their ~ (home) directory in that right-hand panel, use the left-hand panel to browse to your secretlounge-ng-master folder, and just drag all the files across
+7. `SSH whomever@xxx.xxx.xxx.xxx` to log in as the new user with the password you just set
+8. You might need to `sudo apt-get update` and then `sudo apt-get install python3-pip
+9. If you put everything into a secretlounge folder, `cd` into the folder
+10. Install requirements: `sudo pip3 install -r requirements.txt` (You might also have to `sudo pip3 install pyTelegramBotAPI` separately for some reason?)
+11. Copy default configuration: `sudo cp config.yaml.example bot1/config.yaml`
+12. `sudo nano bot1/config.yaml` and paste in your bot key from BotFather (you might need to `sudo apt-get install nano`)
+13. Turn the python file into a program: `sudo chmod 755 `
+14. You'll want to run it on the server and close the SSH window, so get `sudo apt-get install screen`
+
+### Running:
+1. `screen`
+2. `sudo ./secretlounge-ng -c bot1/config.yaml`
+3. On your keyboard, press `Ctrl + A`, then press `D`.
+4. You can `exit` and close your session
+
+### Shutting it down:
+1. `screen -r` to resume
+2. On your keyboard, press `Ctrl + C` to stop the program
+
+## Create another bot
+1. Make sure you're in the secretlounge-ng-master folder
+1. `sudo mkdir bot2`
+2. `sudo cp config.yaml.example bot2/config.yaml`
+3. `sudo nano bot2/config.yaml` and paste in your new bot key from BotFather. Also change 'bot1' to 'bot2' on the database line
+4. Follow the Running section. When you start secretlounge-ng, use the flag `-c bot2/config.yaml`
 
 ## FAQ
 
@@ -68,7 +110,7 @@ root folder
   \-- config.yaml
 \-- bot2
   \-- db.sqlite
-  \-- ...
+  \-- config.yaml
 \-- ...
 \-- README.md
 \-- secretlounge-ng

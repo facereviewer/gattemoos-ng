@@ -3,7 +3,7 @@ bot_token: "BOT_TOKEN_HERE"
 
 # supported db types: json, sqlite
 # both take a single argument which is the database path
-database: [sqlite, "path/to/secretlounge.db"]
+database: [sqlite, "bot1/secretlounge.db"]
 
 # relay contacts
 allow_contacts: false
@@ -14,10 +14,10 @@ allow_documents: true
 allow_remove_command: false
 
 # enable signing messages using /sign or /tsign as well as setting a tripcode
-enable_signing: false
+enable_signing: true
 # limit usage of /sign to once in every interval (seconds)
 # defaults to 600 if not specified, set to 0 to disable
-#sign_limit_interval: 600
+sign_limit_interval: 0
 
 # point of contact shown to blacklisted users (optional)
 #blacklist_contact: http://t.me/invite/something

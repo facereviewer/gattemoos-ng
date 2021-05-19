@@ -60,11 +60,14 @@ def init(config, _db, _ch):
 		types += ["document"]
 	types += ["animation", "audio", "photo", "sticker", "video", "video_note", "voice"]
 
+	# Default commands
+	#cmds = [
+	#	"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "blacklist", "s", "sign", "tripcode", "t", "tsign", "tripcodetoggle"
+	#]
+	
+	# Trimmed command list
 	cmds = [
-		"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma",
-		"version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod",
-		"admin", "warn", "delete", "remove", "uncooldown", "blacklist", "s", "sign",
-		"tripcode", "t", "tsign"
+		"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "blacklist", "expose", "tripcode"
 	]
 	for c in cmds: # maps /<c> to the function cmd_<c>
 		c = c.lower()
@@ -554,6 +557,7 @@ def cmd_motd(ev, arg):
 
 cmd_toggledebug = wrap_core(core.toggle_debug)
 cmd_togglekarma = wrap_core(core.toggle_karma)
+cmd_tripcodetoggle = wrap_core(core.toggle_tripcode)
 
 @takesArgument(optional=True)
 def cmd_tripcode(ev, arg):
@@ -667,8 +671,10 @@ def relay(ev):
 	# manually handle signing / tripcodes for media since captions don't count for commands
 	if not is_forward(ev) and ev.content_type in CAPTIONABLE_TYPES and (ev.caption or "").startswith("/"):
 		c, arg = split_command(ev.caption)
-		if c in ("s", "sign"):
+		# if c in ("s", "sign"):
+		if c in ("expose"):
 			return relay_inner(ev, caption_text=arg, signed=True)
+			# FIX: no text, require another user's tripcode, don't display their name publicly, only expose to the other user.
 		elif c in ("t", "tsign"):
 			return relay_inner(ev, caption_text=arg, tripcode=True)
 
@@ -697,7 +703,7 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False):
 		formatter_network_links(fmt)
 		if signed:
 			formatter_signed_message(user, fmt)
-		elif tripcode:
+		elif tripcode or user.tripcodeToggle:
 			formatter_tripcoded_message(user, fmt)
 		fmt = fmt.build()
 		# either replace whole message or just the caption
@@ -726,11 +732,11 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False):
 			reply_msid=reply_msid, force_caption=force_caption)
 
 @takesArgument()
-def cmd_sign(ev, arg):
+def cmd_expose(ev, arg):
 	ev.text = arg
 	relay_inner(ev, signed=True)
 
-cmd_s = cmd_sign # alias
+#cmd_s = cmd_sign # alias
 
 @takesArgument()
 def cmd_tsign(ev, arg):
