@@ -1,20 +1,13 @@
-/sign is silly. Turn that into /expose and require another's tripcode to be entered, then show it only to them. (Take out cooldown)
+Ban by default. Add username to whitelist
+
+Make /expose require another's tripcode to be entered, then show it only to them. (Take out cooldown)
 
 /modhelp
 /adminhelp should only work for mod/admin
 
-clean up by getting rid of /tsign and maybe a couple others.
-
-
 Images? Send a tripcode message first.
 
-"Tripcode will appear as" add \n
-
-Timeout for tripcode changes. Maybe they can only change once a week or whatever? Admin can remove that cooldown.
-
-Ban by default. Add username to whitelist
-
-Better error detection in tripcode section.
+Configurable timeout for tripcode changes. Default one day?
 
 Take away Create Poll?
 
@@ -24,4 +17,3 @@ Make Installer script to walk people through it (get them to paste in the API co
 
 Security:
 - Is it a problem to sudo?
-- The salt needs to be stored per-user

@@ -286,7 +286,7 @@ def formatter_signed_message(user: core.User, fmt: FormattedMessageBuilder):
 
 # Add tripcode message formatting for User `user` to `fmt`
 def formatter_tripcoded_message(user: core.User, fmt: FormattedMessageBuilder):
-	tripname, tripcode = genTripcode(user.tripcode)
+	tripname, tripcode = genTripcode(user.tripcode, user.salt)
 	# due to how prepend() works the string is built right-to-left
 	fmt.prepend("</code>:\n", True)
 	fmt.prepend(tripcode)

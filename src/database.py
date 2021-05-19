@@ -19,7 +19,7 @@ class SystemConfig():
 USER_PROPS = (
 	"id", "username", "realname", "rank", "joined", "left", "lastActive",
 	"cooldownUntil", "blacklistReason", "warnings", "warnExpiry", "karma",
-	"hideKarma", "debugEnabled", "tripcode", "tripcodeToggle"
+	"hideKarma", "debugEnabled", "tripcode", "salt", "tripcodeToggle"
 )
 
 class User():
@@ -40,6 +40,7 @@ class User():
 		self.hideKarma = None # bool
 		self.debugEnabled = None # bool
 		self.tripcode = None # str?
+		self.salt = None # str?
 		self.tripcodeToggle = None # bool
 	def __eq__(self, other):
 		if isinstance(other, User):
@@ -55,6 +56,8 @@ class User():
 		self.karma = 0
 		self.hideKarma = False
 		self.debugEnabled = False
+		self.tripcode = "newbie#0000"
+		self.salt = str(randint(1000,9999))
 		self.tripcodeToggle = True
 	def isJoined(self):
 		return self.left is None
@@ -187,7 +190,7 @@ class JSONDatabase(Database):
 	def _userToDict(user):
 		props = ["id", "username", "realname", "rank", "joined", "left",
 			"lastActive", "cooldownUntil", "blacklistReason", "warnings",
-			"warnExpiry", "karma", "hideKarma", "debugEnabled", "tripcode", "tripcodeToggle"]
+			"warnExpiry", "karma", "hideKarma", "debugEnabled", "tripcode","salt", "tripcodeToggle"]
 		d = {}
 		for prop in props:
 			value = getattr(user, prop)
@@ -321,6 +324,7 @@ CREATE TABLE IF NOT EXISTS `users` (
 	`hideKarma` TINYINT NOT NULL,
 	`debugEnabled` TINYINT NOT NULL,
 	`tripcode` TEXT,
+	`salt` TEXT,
 	`tripcodeToggle` TINYINT NOT NULL,
 	PRIMARY KEY (`id`)
 );
