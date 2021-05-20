@@ -4,6 +4,7 @@ bot_token: "BOT_TOKEN_HERE"
 # supported db types: json, sqlite
 # both take a single argument which is the database path
 database: [sqlite, "bot1/secretlounge.db"]
+#WARNING: Changes have not been tested with JSON.
 
 # relay contacts
 allow_contacts: false
@@ -11,13 +12,13 @@ allow_contacts: false
 allow_documents: true
 
 # allow mods to remove message without issuing a cooldown
-allow_remove_command: false
+allow_remove_command: true
 
-# enable signing messages using /sign or /tsign as well as setting a tripcode
+# enable signing messages using /tsign as well as setting a tripcode
 enable_signing: true
-# limit usage of /sign to once in every interval (seconds)
-# defaults to 600 if not specified, set to 0 to disable
-sign_limit_interval: 0
+# limit usage of /tripcode to once in every interval (hours)
+# defaults to 1 if not specified, set to 0 to disable
+tripcode_limit_interval: 24
 
 # point of contact shown to blacklisted users (optional)
 #blacklist_contact: http://t.me/invite/something

@@ -42,7 +42,10 @@ types = NumericEnum([
 	"KARMA_NOTIFICATION",
 	"TRIPCODE_INFO",
 	"TRIPCODE_SET",
+	"EXPOSE_TO",
+	"EXPOSED",
 
+	"ERR_NO",
 	"ERR_COMMAND_DISABLED",
 	"ERR_NO_REPLY",
 	"ERR_NOT_IN_CACHE",
@@ -55,7 +58,7 @@ types = NumericEnum([
 	"ERR_ALREADY_UPVOTED",
 	"ERR_UPVOTE_OWN_MESSAGE",
 	"ERR_SPAMMY",
-	"ERR_SPAMMY_SIGN",
+	"ERR_SPAMMY_TRIPCODE",
 	"ERR_INVALID_TRIP_FORMAT",
 	"ERR_NO_TRIPCODE",
 	"ERR_MEDIA_LIMIT",
@@ -108,7 +111,10 @@ format_strs = {
 	types.TRIPCODE_INFO: lambda tripcode, **_:
 		"<b>tripcode</b>: " + ("<code>{tripcode!x}</code>" if tripcode is not None else "unset"),
 	types.TRIPCODE_SET: em("Tripcode set. It will appear as:\n") + "<b>{tripname!x}</b> <code>{tripcode!x}</code>",
+	types.EXPOSE_TO: "{realname}",
+	types.EXPOSED: em("Your real handle has been exposed to {name!x}."),
 
+	types.ERR_NO: "Actually no",
 	types.ERR_COMMAND_DISABLED: em("This command has been disabled."),
 	types.ERR_NO_REPLY: em("You need to reply to a message to use this command."),
 	types.ERR_NOT_IN_CACHE: em("Message not found in cache... (24h passed or bot was restarted)"),
@@ -123,7 +129,7 @@ format_strs = {
 	types.ERR_ALREADY_UPVOTED: em("You have already upvoted this message."),
 	types.ERR_UPVOTE_OWN_MESSAGE: em("You can't upvote your own message."),
 	types.ERR_SPAMMY: em("Your message has not been sent. Avoid sending messages too fast, try again later."),
-	types.ERR_SPAMMY_SIGN: em("Your message has not been sent. Avoid using /sign too often, try again later."),
+	types.ERR_SPAMMY_TRIPCODE: em("Your tripcode cannot be set for another {time_left} hours."),
 	types.ERR_INVALID_TRIP_FORMAT:
 		em("Given tripcode is not valid, the format is ")+
 		"<code>name#pass</code>" + em("."),

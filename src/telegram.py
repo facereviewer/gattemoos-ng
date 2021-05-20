@@ -67,7 +67,7 @@ def init(config, _db, _ch):
 	
 	# Trimmed command list
 	cmds = [
-		"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "blacklist", "expose", "tripcode"
+		"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "blacklist", "exposeto", "tripcode", "t", "tsign"
 	]
 	for c in cmds: # maps /<c> to the function cmd_<c>
 		c = c.lower()
@@ -278,8 +278,8 @@ def formatter_network_links(fmt: FormattedMessageBuilder):
 			fmt.enclose(m.start(), m.end(),
 				"<a href=\"tg://resolve?domain=%s\">" % link, "</a>", True)
 
-# Add signed message formatting for User `user` to `fmt`
-def formatter_signed_message(user: core.User, fmt: FormattedMessageBuilder):
+# Add exposed message formatting for User `user` to `fmt`
+def formatter_expose_message(user: core.User, fmt: FormattedMessageBuilder):
 	fmt.append(" <a href=\"tg://user?id=%d\">" % user.id, True)
 	fmt.append("~~" + user.getFormattedName())
 	fmt.append("</a>", True)
@@ -467,7 +467,7 @@ def check_telegram_exc(e, user_id):
 ####
 
 # Event receiver: handles all things the core decides to do "on its own":
-# e.g. karma notifications, deletion of messages, signed messages
+# e.g. karma notifications, deletion of messages, exposed messages
 # This does *not* include direct replies to commands or relaying messages.
 
 @core.registerReceiver
@@ -671,22 +671,21 @@ def relay(ev):
 	# manually handle signing / tripcodes for media since captions don't count for commands
 	if not is_forward(ev) and ev.content_type in CAPTIONABLE_TYPES and (ev.caption or "").startswith("/"):
 		c, arg = split_command(ev.caption)
-		# if c in ("s", "sign"):
-		if c in ("expose"):
-			return relay_inner(ev, caption_text=arg, signed=True)
+		# if c in ("exposeto"):
+		# 	return relay_inner(ev, caption_text=arg, expose=True)
 			# FIX: no text, require another user's tripcode, don't display their name publicly, only expose to the other user.
-		elif c in ("t", "tsign"):
+		if c in ("t", "tsign"):
 			return relay_inner(ev, caption_text=arg, tripcode=True)
 
 	relay_inner(ev)
 
 # relay the message `ev` to other users in the chat
 # `caption_text` can be a FormattedMessage that overrides the caption of media
-# `signed` and `tripcode` indicate if the message is signed or tripcoded respectively
-def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False):
+# `expose` and `tripcode` indicate if the message is exposed or tripcoded respectively
+def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 	is_media = is_forward(ev) or ev.content_type in MEDIA_FILTER_TYPES
 	msid = core.prepare_user_message(UserContainer(ev.from_user), calc_spam_score(ev),
-		is_media=is_media, signed=signed, tripcode=tripcode)
+		is_media=is_media, expose=expose, tripcode=tripcode)
 	if msid is None or isinstance(msid, rp.Reply):
 		return send_answer(ev, msid) # don't relay message, instead reply
 
@@ -701,9 +700,7 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False):
 		fmt = FormattedMessageBuilder(caption_text, ev.caption, ev.text)
 		formatter_replace_links(ev, fmt)
 		formatter_network_links(fmt)
-		if signed:
-			formatter_signed_message(user, fmt)
-		elif tripcode or user.tripcodeToggle:
+		if tripcode or user.tripcodeToggle:
 			formatter_tripcoded_message(user, fmt)
 		fmt = fmt.build()
 		# either replace whole message or just the caption
@@ -732,9 +729,24 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False):
 			reply_msid=reply_msid, force_caption=force_caption)
 
 @takesArgument()
-def cmd_expose(ev, arg):
-	ev.text = arg
-	relay_inner(ev, signed=True)
+def cmd_exposeto(ev, arg):
+	#c_user = UserContainer(ev.from_user)
+	if ev.reply_to_message is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+
+	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+	if reply_msid is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+
+	c_user = db.getUser(id=ev.from_user.id)
+	fmt = c_user.tripcode[:c_user.tripcode.find("#")]+" has revealed themself to you privately as <a href=\"tg://user?id="+str(c_user.id)+"\">" + c_user.getFormattedName() + "</a>!"
+	#FIX: this can probably just be done in the replies.py, with the data passed into that.
+
+	return send_answer(ev, core.expose_to_user(c_user, reply_msid,fmt), True)	
+	#return send_answer(ev, rp.Reply(rp.types.ERR_NO), True)
+
+	#ev.text = arg
+	#relay_inner(ev, expose=True)
 
 #cmd_s = cmd_sign # alias
 

@@ -54,7 +54,7 @@ class User():
 		self.lastActive = self.joined
 		self.warnings = 0
 		self.karma = 0
-		self.hideKarma = False
+		self.hideKarma = True
 		self.debugEnabled = False
 		self.tripcode = "newbie#0000"
 		self.salt = str(randint(1000,9999))

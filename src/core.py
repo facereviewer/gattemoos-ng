@@ -11,16 +11,16 @@ from src.util import genTripcode
 db = None
 ch = None
 spam_scores = None
-sign_last_used = {} # uid -> datetime
+tripcode_last_used = {} # uid -> datetime
 
 blacklist_contact = None
 enable_signing = None
 allow_remove_command = None
 media_limit_period = None
-sign_interval = None
+tripcode_interval = None
 
 def init(config, _db, _ch):
-	global db, ch, spam_scores, blacklist_contact, enable_signing, allow_remove_command, media_limit_period, sign_interval
+	global db, ch, spam_scores, blacklist_contact, enable_signing, allow_remove_command, media_limit_period, tripcode_interval
 	db = _db
 	ch = _ch
 	spam_scores = ScoreKeeper()
@@ -30,7 +30,7 @@ def init(config, _db, _ch):
 	allow_remove_command = config["allow_remove_command"]
 	if "media_limit_period" in config.keys():
 		media_limit_period = timedelta(hours=int(config["media_limit_period"]))
-	sign_interval = timedelta(seconds=int(config.get("sign_limit_interval", 600)))
+	tripcode_interval = timedelta(hours=int(config.get("tripcode_limit_interval", 1)))
 
 	if config.get("locale"):
 		rp.localization = __import__("src.replies_" + config["locale"],
@@ -328,6 +328,13 @@ def get_tripcode(user):
 
 @requireUser
 def set_tripcode(user, text):
+	if tripcode_interval.total_seconds() > 1:
+		last_used = tripcode_last_used.get(user.id, None)
+		if last_used and (datetime.now() - last_used) < tripcode_interval:
+			diff = tripcode_interval - (datetime.now() - last_used)
+			return rp.Reply(rp.types.ERR_SPAMMY_TRIPCODE,time_left=diff)
+		tripcode_last_used[user.id] = datetime.now()
+
 	if not enable_signing:
 		return rp.Reply(rp.types.ERR_COMMAND_DISABLED)
 
@@ -476,13 +483,24 @@ def give_karma(user, msid):
 		_push_system_message(rp.Reply(rp.types.KARMA_NOTIFICATION), who=user2, reply_to=msid)
 	return rp.Reply(rp.types.KARMA_THANK_YOU)
 
+@requireUser
+def expose_to_user(user, msid, realname):
+	cm = ch.getMessage(msid)
+	if cm is None or cm.user_id is None:
+		return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
+	user2 = db.getUser(id=cm.user_id)
+	tripname, tripcode = genTripcode(user2.tripcode, user2.salt)
+	_push_system_message(rp.Reply(rp.types.EXPOSE_TO,realname=str(realname)), who=user2)
+	return rp.Reply(rp.types.EXPOSED, name=tripname+tripcode)
+
+
 
 @requireUser
-def prepare_user_message(user: User, msg_score, *, is_media=False, signed=False, tripcode=False):
+def prepare_user_message(user: User, msg_score, *, is_media=False, expose=False, tripcode=False):
 	# prerequisites
 	if user.isInCooldown():
 		return rp.Reply(rp.types.ERR_COOLDOWN, until=user.cooldownUntil)
-	if (signed or tripcode) and not enable_signing:
+	if (expose or tripcode) and not enable_signing:
 		return rp.Reply(rp.types.ERR_COMMAND_DISABLED)
 	if tripcode and user.tripcode is None:
 		return rp.Reply(rp.types.ERR_NO_TRIPCODE)
@@ -493,13 +511,6 @@ def prepare_user_message(user: User, msg_score, *, is_media=False, signed=False,
 	ok = spam_scores.increaseSpamScore(user.id, msg_score)
 	if not ok:
 		return rp.Reply(rp.types.ERR_SPAMMY)
-
-	# enforce signing cooldown
-	if signed and sign_interval.total_seconds() > 1:
-		last_used = sign_last_used.get(user.id, None)
-		if last_used and (datetime.now() - last_used) < sign_interval:
-			return rp.Reply(rp.types.ERR_SPAMMY_SIGN)
-		sign_last_used[user.id] = datetime.now()
 
 	return ch.assignMessageId(CachedMessage(user.id))
 

@@ -19,8 +19,7 @@ start - Join the chat (start receiving messages)
 stop - Leave the chat (stop receiving messages)
 users - Find out how many users are in the chat
 info - Get info about your account
-sign - Sign a message with your username
-s - Alias of sign
+exposeto - Send your real username to someone else
 tsign - Sign a message with your tripcode
 t - Alias of tsign
 motd - Show the welcome message
@@ -39,7 +38,7 @@ start - Join the chat (start receiving messages)
 stop - Leave the chat (stop receiving messages)
 users - Find out how many users are in the chat
 info - Get info about your account
-expose - Sign a message with your username
+exposeto - Send your real username to someone else
 motd - Show the welcome message
 tripcode - Show or set a tripcode for your messages
 ```
@@ -56,27 +55,34 @@ tripcode - Show or set a tripcode for your messages
 8. You might need to `sudo apt-get update` and then `sudo apt-get install python3-pip
 9. If you put everything into a secretlounge folder, `cd` into the folder
 10. Install requirements: `sudo pip3 install -r requirements.txt` (You might also have to `sudo pip3 install pyTelegramBotAPI` separately for some reason?)
-11. Copy default configuration: `sudo cp config.yaml.example bot1/config.yaml`
-12. `sudo nano bot1/config.yaml` and paste in your bot key from BotFather (you might need to `sudo apt-get install nano`)
-13. Turn the python file into a program: `sudo chmod 755 `
+11. Copy default configuration: `cp config.yaml.example bot1/config.yaml`
+12. `nano bot1/config.yaml` and paste in your bot key from BotFather (you might need to `sudo apt-get install nano`)
+13. Turn the python file into a program: `sudo chmod 755`
 14. You'll want to run it on the server and close the SSH window, so get `sudo apt-get install screen`
 
 ### Running:
 1. `screen`
-2. `sudo ./secretlounge-ng -c bot1/config.yaml`
+2. `./secretlounge-ng -c bot1/config.yaml`
 3. On your keyboard, press `Ctrl + A`, then press `D`.
 4. You can `exit` and close your session
+
+`screen` can be used to start multiple sessions. You can use `Ctrl + A, N` and `Ctrl + A, P` to go to the Next and Previous screens.
 
 ### Shutting it down:
 1. `screen -r` to resume
 2. On your keyboard, press `Ctrl + C` to stop the program
 
 ## Create another bot
-1. Make sure you're in the secretlounge-ng-master folder
-1. `sudo mkdir bot2`
-2. `sudo cp config.yaml.example bot2/config.yaml`
-3. `sudo nano bot2/config.yaml` and paste in your new bot key from BotFather. Also change 'bot1' to 'bot2' on the database line
+1. Make sure you're in the secretlounge-ng folder
+1. `mkdir bot2`
+2. `cp config.yaml.example bot2/config.yaml`
+3. `nano bot2/config.yaml` and paste in your new bot key from BotFather. Also change 'bot1' to 'bot2' on the database line
 4. Follow the Running section. When you start secretlounge-ng, use the flag `-c bot2/config.yaml`
+
+## Security
+You should harden your server by doing a few other things:
+- Disable SSH for root
+- Close most of the ports. Change defaults for SSH and SFTP
 
 ## FAQ
 

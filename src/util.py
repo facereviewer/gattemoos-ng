@@ -85,16 +85,18 @@ def _salt(c):
 	return '.'
 
 def genTripcode(tripcode, salt):
-	# doesn't actually match 4chan's algorithm exactly
+	# Doesn't match 4chan's algorithm.
 	pos = tripcode.find("#")
 	trname = tripcode[:pos]
 	trpass = tripcode[pos+1:]
 
-	# The random user salt would mean that a user can change to and fro, but they couldn't join on a different account and have the same tripcode.
-	# For now, we'll overwrite it with the older code.
-	factor = (trpass[:8] + 'H.')[1:3]
-	factor = "".join(_salt(c) for c in factor)
+	# The random user salt would guarantee that the tripcode isn't in a rainbow table somewhere. But it would mean they can't join on a different account with the same tripcode.
+	# We'll overwrite it here so that it can be used across clients. To get around security limitations, we'll do some key stretching.
+	salt = (trpass[:8] + 'H.')[1:3]
+	salt = "".join(_salt(c) for c in salt)
 
-	trip_final = crypt(trpass[:10], factor)
+	trip_final = crypt(trpass[:8], salt)
+	for x in range(0,99937):
+		trip_final = crypt(trip_final[:8], salt)
 
 	return trname, "!" + trip_final[-10:]
