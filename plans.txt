@@ -22,6 +22,8 @@ Timer to delete old messages
 
 Intercept edits to edit the messages?
 
+My instructions about `screen` aren't quite correct
+
 Security:
 - Encrypt database
  - decrypt into memory at run-time?
