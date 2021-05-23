@@ -65,6 +65,7 @@ types = NumericEnum([
 	"ERR_SPAMMY_TRIPCODE",
 	"ERR_INVALID_TRIP_FORMAT",
 	"ERR_NO_TRIPCODE",
+	"ERR_NEED_TRIPCODE",
 	"ERR_MEDIA_LIMIT",
 	"ERR_EXPOSE_CONFIRM",
 
@@ -145,6 +146,7 @@ format_strs = {
 		em("Given tripcode is not valid, the format is ")+
 		"<code>name#pass</code>" + em("."),
 	types.ERR_NO_TRIPCODE: em("You don't have a tripcode set."),
+	types.ERR_NEED_TRIPCODE: "<i>This chat requires a tripcode to be set before you can send messages.\nPlease use <code>/tripcode somename#apassword</code> where 'somename' is any name you'd like and 'apassword' is a secret password that will protect your identity.</i>",
 	types.ERR_MEDIA_LIMIT: em("You can't send media or forward messages at this time, try again later."),
 	types.ERR_EXPOSE_CONFIRM: "<i>This will expose your real username. Please use <code>/exposeto yes</code> while replying to someone's message to confirm that you want to expose your username to them.</i>",
 

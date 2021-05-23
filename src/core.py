@@ -226,6 +226,7 @@ def user_join(c_user):
 	updateUserFromEvent(user, c_user)
 	if not any(db.iterateUserIds()):
 		user.rank = RANKS.admin
+		db.addWhitelistedUser(user.id)
 
 	ret = [rp.Reply(rp.types.CHAT_JOIN)]
 	if whitelist:

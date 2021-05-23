@@ -703,6 +703,9 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 		formatter_replace_links(ev, fmt)
 		formatter_network_links(fmt)
 		if tripcode or user.tripcodeToggle:
+			if user.tripcode is None:
+				return send_answer(ev, rp.Reply(rp.types.ERR_NEED_TRIPCODE), False)
+
 			formatter_tripcoded_message(user, fmt)
 		fmt = fmt.build()
 		# either replace whole message or just the caption

@@ -1,7 +1,10 @@
-Augh! I've got the database of users, but the whitelist should record which chat it's for!
-Also, maybe split out the tripcodes so you can have a different code in different chats (though I don't expect much crosstalk)
-
 The database could be refactored to allow whitelisting usernames before people join.
+
+When a new user joins, I could store a whitelisting code and send that to the admin, and then the admin could use that to whitelist them instead of needing their username.
+
+Stop them from sending any messages until they set a tripcode.
+
+"Chat not found" thing. I think there's an 'empty' user entry now... is that Nari?
 
 If the admin leaves, hmmmmmmmmmm, hm.
 
