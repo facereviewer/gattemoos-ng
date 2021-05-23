@@ -182,6 +182,7 @@ format_strs = {
 		"  /adminsay &lt;message&gt; - send an official admin message\n"+
 		"  /motd &lt;message&gt; - set the welcome message (HTML formatted)\n"+
 		"  /uncooldown &lt;id | username&gt; - remove cooldown from an user\n"+
+		"  /whitelist &lt;username or id&gt; - Add a user to the whitelist. Usernames only work for users who have tried joining. \n"+
 		"  /mod &lt;username&gt; - promote an user to the moderator rank\n"+
 		"  /admin &lt;username&gt; - promote an user to the admin rank\n"+
 		"\n"+

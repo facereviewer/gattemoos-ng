@@ -743,7 +743,7 @@ def cmd_exposeto(ev, arg):
 		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
 
 	user = db.getUser(id=ev.from_user.id)
-	fmt = user.tripcode[:user.tripcode.find("#")]+" has revealed themself to you privately as <a href=\"tg://user?id="+str(user.id)+"\">" + user.getFormattedName() + "</a>!"
+	fmt = user.tripcode[:user.tripcode.find("#")]+" has revealed theirself to you privately as <a href=\"tg://user?id="+str(user.id)+"\">" + user.getFormattedName() + "</a>!"
 	#FIX: this can probably just be done in the replies.py, with the data passed into that.
 
 	return send_answer(ev, core.expose_to_user(user, reply_msid,fmt), True)	

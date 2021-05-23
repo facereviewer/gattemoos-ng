@@ -1,7 +1,11 @@
 Augh! I've got the database of users, but the whitelist should record which chat it's for!
 Also, maybe split out the tripcodes so you can have a different code in different chats (though I don't expect much crosstalk)
 
+The database could be refactored to allow whitelisting usernames before people join.
+
 If the admin leaves, hmmmmmmmmmm, hm.
+
+If certain options are off, there should be messages about that.
 
 /expose could take another's tripcode instead of confirmation.
 

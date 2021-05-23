@@ -89,12 +89,16 @@ You should harden your server by doing a few other things:
 
 1. **How do I unban a blacklisted user from my bot?**
 
-To unban someone you need their Telegram User ID (preferred) or username/profile name.
+To unban someone, you need their Telegram User ID (preferred) or username/profile name.
 If you have a name you can use `./util/blacklist.py find` to search your bot's database for the user record.
 
 You can then run `./util/blacklist.py unban 12345678` to remove the ban.
 
-2. **How do I demote somone I promoted to mod/admin at some point?**
+2. **How do I whitelist a user for my bot?**
+
+To whitelist someone, you need their Telegram User ID or their username. The username will only work after they've already tried joining once. Keep in mind that all bots currently use the same database records, so keep that in mind if you're running multiple bots.
+
+3. **How do I demote somone I promoted to mod/admin at some point?**
 
 If you already have an User ID in mind, proceed below.
 Otherwise you can either use the find utility like explained above or run
@@ -104,7 +108,7 @@ Simply run `./util/perms.py set 12345678 user` to remove the users' privileges.
 
 This can also be used to grant an user higher privileges by exchanging the last argument with "*mod*" or "*admin*".
 
-3. **What is the suggested setup to run multiple bots?**
+4. **What is the suggested setup to run multiple bots?**
 
 The `blacklist.py` and `perms.py` script, including advanced functions like blacklist syncing
 (`./util/blacklist.py sync`), support a structure like the following where each bot
