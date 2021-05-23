@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime, timedelta
 from threading import Lock
 
@@ -13,20 +14,22 @@ ch = None
 spam_scores = None
 tripcode_last_used = {} # uid -> datetime
 
+whitelist = None
 blacklist_contact = None
-enable_signing = None
+enable_expose = None
 allow_remove_command = None
 media_limit_period = None
 tripcode_interval = None
 
 def init(config, _db, _ch):
-	global db, ch, spam_scores, blacklist_contact, enable_signing, allow_remove_command, media_limit_period, tripcode_interval
+	global db, ch, spam_scores, whitelist, blacklist_contact, enable_expose, allow_remove_command, media_limit_period, tripcode_interval
 	db = _db
 	ch = _ch
 	spam_scores = ScoreKeeper()
 
+	whitelist = config["whitelist"]
 	blacklist_contact = config.get("blacklist_contact", "")
-	enable_signing = config["enable_signing"]
+	enable_expose = config["enable_expose"]
 	allow_remove_command = config["allow_remove_command"]
 	if "media_limit_period" in config.keys():
 		media_limit_period = timedelta(hours=int(config["media_limit_period"]))
@@ -191,7 +194,17 @@ def user_join(c_user):
 	if user is not None:
 		# check if user can't rejoin
 		err = None
-		if user.isBlacklisted():
+		if whitelist:
+			try:
+				db.getWhitelistedUser(id=c_user.id)
+				allowed = True
+			except KeyError as e:
+				allowed = False
+
+		if not allowed:
+				logging.info("%s tried to join", user)
+				err = rp.Reply(rp.types.ERR_NOTWHITELISTED,  contact=blacklist_contact)
+		elif user.isBlacklisted():
 			err = rp.Reply(rp.types.ERR_BLACKLISTED, reason=user.blacklistReason, contact=blacklist_contact)
 		elif user.isJoined():
 			err = rp.Reply(rp.types.USER_IN_CHAT)
@@ -214,9 +227,20 @@ def user_join(c_user):
 	if not any(db.iterateUserIds()):
 		user.rank = RANKS.admin
 
-	logging.info("%s joined chat", user)
-	db.addUser(user)
 	ret = [rp.Reply(rp.types.CHAT_JOIN)]
+	if whitelist:
+		try:
+			db.getWhitelistedUser(id=c_user.id)
+		except KeyError as e:
+			user.setLeft()
+			logging.info("%s tried to join", user)
+			ret = [rp.Reply(rp.types.ERR_NOTWHITELISTED,  contact=blacklist_contact)]
+
+	# I could add a toggle for these messages
+	for admin in db.iterateAdmins():
+		_push_system_message(rp.Reply(rp.types.NEW_USER), who=admin) 
+	db.addUser(user)
+	logging.info("%s joined chat", user)
 
 	motd = db.getSystemConfig().motd
 	if motd != "":
@@ -237,6 +261,16 @@ def user_leave(user):
 	logging.info("%s left chat", user)
 
 	return rp.Reply(rp.types.CHAT_LEAVE)
+
+@requireUser
+@requireRank(RANKS.mod)
+def modhelp(c_user):
+	return rp.Reply(rp.types.HELP_MODERATOR)
+
+@requireUser
+@requireRank(RANKS.admin)
+def adminhelp(c_user):
+	return rp.Reply(rp.types.HELP_ADMIN)
 
 @requireUser
 def get_info(user):
@@ -321,8 +355,8 @@ def toggle_karma(user):
 
 @requireUser
 def get_tripcode(user):
-	if not enable_signing:
-		return rp.Reply(rp.types.ERR_COMMAND_DISABLED)
+	# if not enable_expose:
+	# 	return rp.Reply(rp.types.ERR_COMMAND_DISABLED)
 
 	return rp.Reply(rp.types.TRIPCODE_INFO, tripcode=user.tripcode)
 
@@ -335,8 +369,8 @@ def set_tripcode(user, text):
 			return rp.Reply(rp.types.ERR_SPAMMY_TRIPCODE,time_left=diff)
 		tripcode_last_used[user.id] = datetime.now()
 
-	if not enable_signing:
-		return rp.Reply(rp.types.ERR_COMMAND_DISABLED)
+	# if not enable_expose:
+	# 	return rp.Reply(rp.types.ERR_COMMAND_DISABLED)
 
 	if not (0 < text.find("#") < len(text) - 1):
 		return rp.Reply(rp.types.ERR_INVALID_TRIP_FORMAT)
@@ -447,6 +481,32 @@ def uncooldown_user(user, oid2=None, username2=None):
 
 @requireUser
 @requireRank(RANKS.admin)
+def whitelist_user(c_user, username):
+	original_name = username
+	username = username.strip().lower()
+	user_id = None
+	if username.startswith("@"):
+		for user in db.iterateUsers():
+			if "@"+user.username.lower() == username:
+				user_id = user.id
+	elif re.search("^[0-9+]{5,}$",username) is not None:
+		user_id = username
+	if user_id is not None:
+		try:
+			db.getWhitelistedUser(user_id)
+			return rp.Reply(rp.types.ERR_ALREADY_WHITELISTED)
+		except KeyError as e:
+			db.addWhitelistedUser(user_id)
+	else:
+		return rp.Reply(rp.types.ERR_NO_USER)
+
+
+	logging.info("%s was whitelisted by %s", original_name, c_user)
+	_push_system_message(rp.Reply(rp.types.WHITELIST_SUCCESS), who=c_user)
+	return []
+
+@requireUser
+@requireRank(RANKS.admin)
 def blacklist_user(user, msid, reason):
 	cm = ch.getMessage(msid)
 	if cm is None or cm.user_id is None:
@@ -500,7 +560,7 @@ def prepare_user_message(user: User, msg_score, *, is_media=False, expose=False,
 	# prerequisites
 	if user.isInCooldown():
 		return rp.Reply(rp.types.ERR_COOLDOWN, until=user.cooldownUntil)
-	if (expose or tripcode) and not enable_signing:
+	if expose and not enable_expose:
 		return rp.Reply(rp.types.ERR_COMMAND_DISABLED)
 	if tripcode and user.tripcode is None:
 		return rp.Reply(rp.types.ERR_NO_TRIPCODE)

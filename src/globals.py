@@ -48,17 +48,17 @@ RANKS = Enum({
 })
 
 # Cooldown related
-COOLDOWN_TIME_BEGIN = [1, 5, 25, 120, 720, 4320] # begins with 1m, 5m, 25m, 2h, 12h, 3d
-COOLDOWN_TIME_LINEAR_M = 4320 # continues 7d, 10d, 13d, 16d, ... (linear)
-COOLDOWN_TIME_LINEAR_B = 10080
-WARN_EXPIRE_HOURS = 7 * 24
+COOLDOWN_TIME_BEGIN = [1, 5, 25, 60*2, 60*12, 60*24*3] # begins with 1m, 5m, 25m, 2h, 12h, 3d
+COOLDOWN_TIME_LINEAR_M = 60*24*3 # continues 7d, 10d, 13d, 16d, ... (linear)
+COOLDOWN_TIME_LINEAR_B = 60*24*7
+WARN_EXPIRE_HOURS = 24*7
 
 # Karma related
 KARMA_PLUS_ONE = 1
 KARMA_WARN_PENALTY = 10
 
 # Spam limits
-SPAM_LIMIT = 3
+SPAM_LIMIT = 6
 SPAM_LIMIT_HIT = 6
 SPAM_INTERVAL_SECONDS = 5
 

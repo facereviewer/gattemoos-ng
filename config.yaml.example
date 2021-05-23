@@ -14,12 +14,15 @@ allow_documents: true
 # allow mods to remove message without issuing a cooldown
 allow_remove_command: true
 
-# enable signing messages using /tsign as well as setting a tripcode
-enable_signing: true
+# enable exposing oneself's real identity to another chat member
+enable_expose: true
+
 # limit usage of /tripcode to once in every interval (hours)
 # defaults to 1 if not specified, set to 0 to disable
 tripcode_limit_interval: 24
 
+# enable checking the whitelist. If enabled, a user will be disallowed from joining unless they've been added to the whitelist.
+whitelist: true
 # point of contact shown to blacklisted users (optional)
 #blacklist_contact: http://t.me/invite/something
 

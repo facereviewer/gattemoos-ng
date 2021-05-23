@@ -62,12 +62,12 @@ def init(config, _db, _ch):
 
 	# Default commands
 	#cmds = [
-	#	"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "blacklist", "s", "sign", "tripcode", "t", "tsign", "tripcodetoggle"
+	#	"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "whitelist", "blacklist", "s", "sign", "tripcode", "t", "tsign", "tripcodetoggle"
 	#]
 	
 	# Trimmed command list
 	cmds = [
-		"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "blacklist", "exposeto", "tripcode", "t", "tsign"
+		"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "whitelist", "blacklist", "exposeto", "tripcode"
 	]
 	for c in cmds: # maps /<c> to the function cmd_<c>
 		c = c.lower()
@@ -143,7 +143,7 @@ def wrap_core(func, reply_to=False):
 def send_answer(ev, m, reply_to=False):
 	if m is None:
 		return
-	elif isinstance(m, list):
+	elif isinstance(m, list): #forwarding a bunch of messages
 		for m2 in m:
 			send_answer(ev, m2, reply_to)
 		return
@@ -569,11 +569,8 @@ def cmd_tripcode(ev, arg):
 		send_answer(ev, core.set_tripcode(c_user, arg))
 
 
-def cmd_modhelp(ev):
-	send_answer(ev, rp.Reply(rp.types.HELP_MODERATOR), True)
-
-def cmd_adminhelp(ev):
-	send_answer(ev, rp.Reply(rp.types.HELP_ADMIN), True)
+cmd_modhelp = wrap_core(core.modhelp)
+cmd_adminhelp = wrap_core(core.adminhelp)
 
 def cmd_version(ev):
 	send_answer(ev, rp.Reply(rp.types.PROGRAM_VERSION, version=VERSION), True)
@@ -635,6 +632,11 @@ def cmd_uncooldown(ev, arg):
 		username = arg
 
 	send_answer(ev, core.uncooldown_user(c_user, oid, username), True)
+
+@takesArgument()
+def cmd_whitelist(ev, arg):
+	c_user = UserContainer(ev.from_user)
+	return send_answer(ev, core.whitelist_user(c_user, arg), True)
 
 @takesArgument(optional=True)
 def cmd_blacklist(ev, arg):
@@ -728,9 +730,11 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 		send_to_single(ev_tosend, msid, user2,
 			reply_msid=reply_msid, force_caption=force_caption)
 
-@takesArgument()
+@takesArgument(optional=True)
 def cmd_exposeto(ev, arg):
-	#c_user = UserContainer(ev.from_user)
+	if arg is None or arg != "yes":
+		return send_answer(ev, rp.Reply(rp.types.ERR_EXPOSE_CONFIRM), True)
+		
 	if ev.reply_to_message is None:
 		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
 
@@ -738,11 +742,11 @@ def cmd_exposeto(ev, arg):
 	if reply_msid is None:
 		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
 
-	c_user = db.getUser(id=ev.from_user.id)
-	fmt = c_user.tripcode[:c_user.tripcode.find("#")]+" has revealed themself to you privately as <a href=\"tg://user?id="+str(c_user.id)+"\">" + c_user.getFormattedName() + "</a>!"
+	user = db.getUser(id=ev.from_user.id)
+	fmt = user.tripcode[:user.tripcode.find("#")]+" has revealed themself to you privately as <a href=\"tg://user?id="+str(user.id)+"\">" + user.getFormattedName() + "</a>!"
 	#FIX: this can probably just be done in the replies.py, with the data passed into that.
 
-	return send_answer(ev, core.expose_to_user(c_user, reply_msid,fmt), True)	
+	return send_answer(ev, core.expose_to_user(user, reply_msid,fmt), True)	
 	#return send_answer(ev, rp.Reply(rp.types.ERR_NO), True)
 
 	#ev.text = arg

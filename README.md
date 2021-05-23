@@ -61,15 +61,15 @@ tripcode - Show or set a tripcode for your messages
 14. You'll want to run it on the server and close the SSH window, so get `sudo apt-get install screen`
 
 ### Running:
-1. `screen`
+1. `screen -dmS bot1` where 'bot1' can be any name you choose.
 2. `./secretlounge-ng -c bot1/config.yaml`
-3. On your keyboard, press `Ctrl + A`, then press `D`.
-4. You can `exit` and close your session
+3. On your keyboard, press `Ctrl + A`, then press `D` to leave that screen.
+4. You can now `exit` and close your session
 
 `screen` can be used to start multiple sessions. You can use `Ctrl + A, N` and `Ctrl + A, P` to go to the Next and Previous screens.
 
 ### Shutting it down:
-1. `screen -r` to resume
+1. `screen -r bot1` to resume
 2. On your keyboard, press `Ctrl + C` to stop the program
 
 ## Create another bot
@@ -77,7 +77,8 @@ tripcode - Show or set a tripcode for your messages
 1. `mkdir bot2`
 2. `cp config.yaml.example bot2/config.yaml`
 3. `nano bot2/config.yaml` and paste in your new bot key from BotFather. Also change 'bot1' to 'bot2' on the database line
-4. Follow the Running section. When you start secretlounge-ng, use the flag `-c bot2/config.yaml`
+4. `screen -dmS bot2`
+5. When you start secretlounge-ng, use the -c flag: `./secretlounge-ng -c bot2/config.yaml`
 
 ## Security
 You should harden your server by doing a few other things:

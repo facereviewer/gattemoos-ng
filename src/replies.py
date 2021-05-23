@@ -44,6 +44,8 @@ types = NumericEnum([
 	"TRIPCODE_SET",
 	"EXPOSE_TO",
 	"EXPOSED",
+	"NEW_USER",
+	"WHITELIST_SUCCESS",
 
 	"ERR_NO",
 	"ERR_COMMAND_DISABLED",
@@ -54,6 +56,8 @@ types = NumericEnum([
 	"ERR_ALREADY_WARNED",
 	"ERR_NOT_IN_COOLDOWN",
 	"ERR_COOLDOWN",
+	"ERR_NOTWHITELISTED",
+	"ERR_ALREADY_WHITELISTED",
 	"ERR_BLACKLISTED",
 	"ERR_ALREADY_UPVOTED",
 	"ERR_UPVOTE_OWN_MESSAGE",
@@ -62,6 +66,7 @@ types = NumericEnum([
 	"ERR_INVALID_TRIP_FORMAT",
 	"ERR_NO_TRIPCODE",
 	"ERR_MEDIA_LIMIT",
+	"ERR_EXPOSE_CONFIRM",
 
 	"USER_INFO",
 	"USER_INFO_MOD",
@@ -113,6 +118,8 @@ format_strs = {
 	types.TRIPCODE_SET: em("Tripcode set. It will appear as:\n") + "<b>{tripname!x}</b> <code>{tripcode!x}</code>",
 	types.EXPOSE_TO: "{realname}",
 	types.EXPOSED: em("Your real handle has been exposed to {name!x}."),
+	types.NEW_USER: "A new user has tried joining.",
+	types.WHITELIST_SUCCESS: "☑ Success. Please delete your command so that sensitive information is not hanging around.",
 
 	types.ERR_NO: "Actually no",
 	types.ERR_COMMAND_DISABLED: em("This command has been disabled."),
@@ -123,6 +130,10 @@ format_strs = {
 	types.ERR_COOLDOWN: em("Your cooldown expires at {until!t}"),
 	types.ERR_ALREADY_WARNED: em("A warning has already been issued for this message."),
 	types.ERR_NOT_IN_COOLDOWN: em("This user is not in a cooldown right now."),
+	types.ERR_NOTWHITELISTED: lambda contact, **_:
+		em( "You haven't been whitelisted.") +
+		( em("\ncontact:") + " {contact}" if contact else "" ),
+	types.ERR_ALREADY_WHITELISTED: em("This user has already been added to the whitelist."),
 	types.ERR_BLACKLISTED: lambda reason, contact, **_:
 		em( "You've been blacklisted" + (reason and " for {reason!x}" or "") )+
 		( em("\ncontact:") + " {contact}" if contact else "" ),
@@ -135,6 +146,7 @@ format_strs = {
 		"<code>name#pass</code>" + em("."),
 	types.ERR_NO_TRIPCODE: em("You don't have a tripcode set."),
 	types.ERR_MEDIA_LIMIT: em("You can't send media or forward messages at this time, try again later."),
+	types.ERR_EXPOSE_CONFIRM: "<i>This will expose your real username. Please use <code>/exposeto yes</code> while replying to someone's message to confirm that you want to expose your username to them.</i>",
 
 	types.USER_INFO: lambda warnings, cooldown, **_:
 		"<b>id</b>: {id}, <b>username</b>: {username!x}, <b>rank</b>: {rank_i} ({rank})\n"+

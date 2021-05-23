@@ -18,7 +18,7 @@ class SystemConfig():
 
 USER_PROPS = (
 	"id", "username", "realname", "rank", "joined", "left", "lastActive",
-	"cooldownUntil", "blacklistReason", "warnings", "warnExpiry", "karma",
+	"cooldownUntil", "blacklistReason", "warnings", "warnExpiry", "forwardWarned", "karma",
 	"hideKarma", "debugEnabled", "tripcode", "salt", "tripcodeToggle"
 )
 
@@ -36,6 +36,7 @@ class User():
 		self.blacklistReason = None # str?
 		self.warnings = None # int
 		self.warnExpiry = None # datetime?
+		self.forwardWarned = None # bool
 		self.karma = None # int
 		self.hideKarma = None # bool
 		self.debugEnabled = None # bool
@@ -53,10 +54,10 @@ class User():
 		self.joined = datetime.now()
 		self.lastActive = self.joined
 		self.warnings = 0
+		self.forwardWarned = 0
 		self.karma = 0
 		self.hideKarma = True
 		self.debugEnabled = False
-		self.tripcode = "newbie#0000"
 		self.salt = str(randint(1000,9999))
 		self.tripcodeToggle = True
 	def isJoined(self):
@@ -107,7 +108,7 @@ class User():
 		if self.warnings > 0:
 			self.warnExpiry = datetime.now() + timedelta(hours=WARN_EXPIRE_HOURS)
 		else:
-			self.warnExpiry = None
+			self.warnExpiry = None		
 
 # abstract db
 
@@ -150,11 +151,22 @@ class Database():
 		with self.lock:
 			l = list(self.getUser(id=id) for id in self.iterateUserIds())
 		yield from l
+	def iterateAdmins(self):
+		with self.lock:
+			l = list(self.getUser(id=id) for id in self.iterateAdmins())
+		yield from l
 	def modifyUser(self, **kwargs):
 		with self.lock:
 			user = self.getUser(**kwargs)
 			callback = lambda newuser: self.setUser(user.id, newuser)
 			return ModificationContext(user, callback, self.lock)
+	def addWhitelistedUser(self, **kwargs):
+		with self.lock:
+			self.addWhitelistedUser(**kwargs)
+	def getWhitelistedUser(self, **kwargs):
+		with self.lock:
+			success = self.getWhitelistedUser(**kwargs)
+			return success
 	def modifySystemConfig(self):
 		with self.lock:
 			config = self.getSystemConfig()
@@ -190,7 +202,7 @@ class JSONDatabase(Database):
 	def _userToDict(user):
 		props = ["id", "username", "realname", "rank", "joined", "left",
 			"lastActive", "cooldownUntil", "blacklistReason", "warnings",
-			"warnExpiry", "karma", "hideKarma", "debugEnabled", "tripcode","salt", "tripcodeToggle"]
+			"warnExpiry", "forwardWarned", "karma", "hideKarma", "debugEnabled", "tripcode","salt", "tripcodeToggle"]
 		d = {}
 		for prop in props:
 			value = getattr(user, prop)
@@ -202,7 +214,7 @@ class JSONDatabase(Database):
 	def _userFromDict(d):
 		if d is None: return None
 		props = ["id", "username", "realname", "rank", "blacklistReason",
-			"warnings", "karma", "hideKarma", "debugEnabled", "tripcodeToggle"]
+			"warnings", "forwardWarned", "karma", "hideKarma", "debugEnabled", "tripcodeToggle"]
 		props_d = [("tripcode", None)]
 		dateprops = ["joined", "left", "lastActive", "cooldownUntil", "warnExpiry"]
 		user = User()
@@ -308,6 +320,12 @@ CREATE TABLE IF NOT EXISTS `system_config` (
 );
 			""".strip())
 			self.db.execute("""
+CREATE TABLE IF NOT EXISTS `whitelist` (
+	`id` BIGINT NOT NULL,
+	PRIMARY KEY (`id`)
+);
+			""".strip())
+			self.db.execute("""
 CREATE TABLE IF NOT EXISTS `users` (
 	`id` BIGINT NOT NULL,
 	`username` TEXT,
@@ -320,6 +338,7 @@ CREATE TABLE IF NOT EXISTS `users` (
 	`blacklistReason` TEXT,
 	`warnings` INTEGER NOT NULL,
 	`warnExpiry` TIMESTAMP,
+	`forwardWarned` TINYINT,
 	`karma` INTEGER NOT NULL,
 	`hideKarma` TINYINT NOT NULL,
 	`debugEnabled` TINYINT NOT NULL,
@@ -332,6 +351,8 @@ CREATE TABLE IF NOT EXISTS `users` (
 			# migration
 			if not row_exists("users", "tripcode"):
 				self.db.execute("ALTER TABLE `users` ADD `tripcode` TEXT")
+			if not row_exists("users", "forwardWarned"):
+				self.db.execute("ALTER TABLE `users` ADD `forwardWarned` TINYINT")
 	def getUser(self, id=None):
 		if id is None:
 			raise ValueError()
@@ -362,6 +383,25 @@ CREATE TABLE IF NOT EXISTS `users` (
 		param = list(newuser.values())
 		with self.lock:
 			self.db.execute(sql, param)
+	def addWhitelistedUser(self, id=None): #if a username had been added, it was converted into an ID before coming here.
+		if id is None:
+			raise ValueError()
+		#sql = "DELETE FROM whitelist WHERE id = ?" #testing
+		sql = "INSERT INTO whitelist(id) VALUES (?)"
+		param = str(id).strip().lower()
+		with self.lock:
+			self.db.execute(sql, (param, ))
+	def getWhitelistedUser(self, id=None):
+		if id is None:
+			raise ValueError()
+		sql = "SELECT id FROM whitelist WHERE id = ?"
+		param = str(id).strip().lower()
+		with self.lock:
+			cur = self.db.execute(sql, (param, ))
+			row = cur.fetchone()
+		if row is None:
+			raise KeyError()
+		return True
 	def iterateUserIds(self):
 		sql = "SELECT `id` FROM users"
 		with self.lock:
@@ -372,6 +412,13 @@ CREATE TABLE IF NOT EXISTS `users` (
 		sql = "SELECT * FROM users"
 		with self.lock:
 			cur = self.db.execute(sql)
+			l = list(SQLiteDatabase._userFromRow(row) for row in cur)
+		yield from l
+	def iterateAdmins(self):
+		sql = "SELECT * FROM users WHERE rank = ?"
+		param = RANKS.admin
+		with self.lock:
+			cur = self.db.execute(sql, (param, ))
 			l = list(SQLiteDatabase._userFromRow(row) for row in cur)
 		yield from l
 	def getSystemConfig(self):
