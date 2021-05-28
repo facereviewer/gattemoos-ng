@@ -96,7 +96,7 @@ def genTripcode(tripcode, salt):
 	salt = "".join(_salt(c) for c in salt)
 
 	trip_final = crypt(trpass[:8], salt)
-	for x in range(0,99937):
+	for x in range(0,9937):
 		trip_final = crypt(trip_final[:8], salt)
 
 	return trname, "!" + trip_final[-10:]

@@ -20,20 +20,22 @@ enable_expose = None
 allow_remove_command = None
 media_limit_period = None
 tripcode_interval = None
+tripcode_toggle = None
 
 def init(config, _db, _ch):
-	global db, ch, spam_scores, whitelist, blacklist_contact, enable_expose, allow_remove_command, media_limit_period, tripcode_interval
+	global db, ch, spam_scores, whitelist, blacklist_contact, enable_expose, allow_remove_command, media_limit_period, tripcode_interval, tripcode_toggle
 	db = _db
 	ch = _ch
 	spam_scores = ScoreKeeper()
 
-	whitelist = config["whitelist"]
+	whitelist = config.get("whitelist",False)
 	blacklist_contact = config.get("blacklist_contact", "")
-	enable_expose = config["enable_expose"]
-	allow_remove_command = config["allow_remove_command"]
+	enable_expose = config.get("enable_expose",False)
+	allow_remove_command = config.get("allow_remove_command",False)
 	if "media_limit_period" in config.keys():
 		media_limit_period = timedelta(hours=int(config["media_limit_period"]))
 	tripcode_interval = timedelta(hours=int(config.get("tripcode_limit_interval", 1)))
+	tripcode_toggle = config.get("tripcode_toggle",False)
 
 	if config.get("locale"):
 		rp.localization = __import__("src.replies_" + config["locale"],
@@ -342,10 +344,12 @@ def toggle_debug(user):
 
 @requireUser
 def toggle_tripcode(user):
-	with db.modifyUser(id=user.id) as user:
-		user.tripcodeToggle = not user.tripcodeToggle
-		new = user.tripcodeToggle
-	return rp.Reply(rp.types.BOOLEAN_CONFIG, description="Username (tripcode)", enabled=new)
+	if(tripcode_toggle):
+		with db.modifyUser(id=user.id) as user:
+			user.tripcodeToggle = not user.tripcodeToggle
+			new = user.tripcodeToggle
+		tripname, tripcode = genTripcode(user.tripcode, user.salt)
+		return rp.Reply(rp.types.BOOLEAN_CONFIG, description=tripname+tripcode+" tripcode", enabled=new)
 
 @requireUser
 def toggle_karma(user):
@@ -479,6 +483,11 @@ def uncooldown_user(user, oid2=None, username2=None):
 		user2.cooldownUntil = None
 	logging.info("%s removed cooldown from %s (was until %s)", user, user2, format_datetime(was_until))
 	return rp.Reply(rp.types.SUCCESS)
+
+@requireUser
+@requireRank(RANKS.admin)
+def show_whitelist(c_user):
+	return rp.Reply(rp.types.WHITELIST_INFO)
 
 @requireUser
 @requireRank(RANKS.admin)

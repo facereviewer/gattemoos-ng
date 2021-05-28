@@ -31,9 +31,10 @@ registered_commands = {}
 # settings
 allow_documents = None
 linked_network: dict = None
+tripcode_toggle = None
 
 def init(config, _db, _ch):
-	global bot, db, ch, message_queue, allow_documents, linked_network
+	global bot, db, ch, message_queue, allow_documents, linked_network, tripcode_toggle
 	if config["bot_token"] == "":
 		logging.error("No telegram token specified.")
 		exit(1)
@@ -49,6 +50,7 @@ def init(config, _db, _ch):
 	allow_contacts = config["allow_contacts"]
 	allow_documents = config["allow_documents"]
 	linked_network = config.get("linked_network")
+	tripcode_toggle = config.get("tripcode_toggle",False)
 	if linked_network is not None and not isinstance(linked_network, dict):
 		logging.error("Wrong type for 'linked_network'")
 		exit(1)
@@ -67,12 +69,14 @@ def init(config, _db, _ch):
 	
 	# Trimmed command list
 	cmds = [
-		"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "whitelist", "blacklist", "exposeto", "tripcode"
+		"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "whitelist", "blacklist", "exposeto", "tripcode", "tripcodetoggle"
 	]
 	for c in cmds: # maps /<c> to the function cmd_<c>
 		c = c.lower()
 		registered_commands[c] = globals()["cmd_" + c]
 	set_handler(relay, content_types=types)
+
+	core._push_system_message(rp.Reply(rp.types.PROGRAM_START, version=VERSION))
 
 def set_handler(func, *args, **kwargs):
 	def wrapper(*args, **kwargs):
@@ -140,7 +144,7 @@ def wrap_core(func, reply_to=False):
 		send_answer(ev, m, reply_to=reply_to)
 	return f
 
-def send_answer(ev, m, reply_to=False):
+def send_answer(ev, m, reply_to=False, whitelist=False):
 	if m is None:
 		return
 	elif isinstance(m, list): #forwarding a bunch of messages
@@ -152,7 +156,7 @@ def send_answer(ev, m, reply_to=False):
 	def f(ev=ev, m=m):
 		while True:
 			try:
-				send_to_single_inner(ev.chat.id, m, reply_to=reply_to)
+				send_to_single_inner(ev.chat.id, m, reply_to=reply_to, whitelist=whitelist)
 			except telebot.apihelper.ApiException as e:
 				retry = check_telegram_exc(e, None)
 				if retry:
@@ -402,13 +406,23 @@ def resend_message(chat_id, ev, reply_to=None, force_caption: FormattedMessage=N
 
 # send a message `ev` (multiple types possible) to Telegram ID `chat_id`
 # returns the sent Telegram message
-def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None):
+def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None, whitelist=None):
 	if isinstance(ev, rp.Reply):
 		kwargs2 = {}
 		if reply_to is not None:
 			kwargs2["reply_to_message_id"] = reply_to
 		if ev.type == rp.types.CUSTOM:
 			kwargs2["disable_web_page_preview"] = True
+		if whitelist:
+			kwargs2["reply_markup"] = json.dumps({"inline_keyboard": [[
+				{
+					"text": "A",
+					"callback_data": "A1"            
+				}, 
+				{
+					"text": "B",
+					"callback_data": "C1"            
+				}]]})
 		return bot.send_message(chat_id, rp.formatForTelegram(ev), parse_mode="HTML", **kwargs2)
 	elif isinstance(ev, FormattedMessage):
 		kwargs2 = {}
@@ -633,9 +647,12 @@ def cmd_uncooldown(ev, arg):
 
 	send_answer(ev, core.uncooldown_user(c_user, oid, username), True)
 
-@takesArgument()
+@takesArgument(optional=True)
 def cmd_whitelist(ev, arg):
 	c_user = UserContainer(ev.from_user)
+	if arg.strip() == "":
+		return send_answer(ev, core.show_whitelist(c_user), whitelist=True)
+		
 	return send_answer(ev, core.whitelist_user(c_user, arg), True)
 
 @takesArgument(optional=True)
@@ -673,9 +690,9 @@ def relay(ev):
 	# manually handle signing / tripcodes for media since captions don't count for commands
 	if not is_forward(ev) and ev.content_type in CAPTIONABLE_TYPES and (ev.caption or "").startswith("/"):
 		c, arg = split_command(ev.caption)
-		# if c in ("exposeto"):
-		# 	return relay_inner(ev, caption_text=arg, expose=True)
-			# FIX: no text, require another user's tripcode, don't display their name publicly, only expose to the other user.
+		# This code used to display a message as the user
+		# if c in ("sign"):
+		# 	return relay_inner(ev, caption_text=arg, sign=True)
 		if c in ("t", "tsign"):
 			return relay_inner(ev, caption_text=arg, tripcode=True)
 
@@ -686,12 +703,13 @@ def relay(ev):
 # `expose` and `tripcode` indicate if the message is exposed or tripcoded respectively
 def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 	is_media = is_forward(ev) or ev.content_type in MEDIA_FILTER_TYPES
-	msid = core.prepare_user_message(UserContainer(ev.from_user), calc_spam_score(ev),
-		is_media=is_media, expose=expose, tripcode=tripcode)
+	msid = core.prepare_user_message(UserContainer(ev.from_user), calc_spam_score(ev), is_media=is_media, expose=expose, tripcode=tripcode)
 	if msid is None or isinstance(msid, rp.Reply):
 		return send_answer(ev, msid) # don't relay message, instead reply
 
 	user = db.getUser(id=ev.from_user.id)
+	if not tripcode_toggle:
+		tripcode=True
 
 	# apply text formatting to text or caption (if media)
 	ev_tosend = ev

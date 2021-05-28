@@ -31,6 +31,7 @@ togglekarma - Toggle karma notifications
 tripcode - Show or set a tripcode for your messages
 tripcodetoggle - Toggle tripcode to be on by default on messages
 ```
+(By default, tripcodetoggle is turned off in config.)
 
 ### Trimmed Command List for ease of use
 ```

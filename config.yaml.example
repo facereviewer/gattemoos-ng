@@ -20,6 +20,8 @@ enable_expose: true
 # limit usage of /tripcode to once in every interval (hours)
 # defaults to 1 if not specified, set to 0 to disable
 tripcode_limit_interval: 24
+# Allows toggling tripcodes off for full anonymity (default: no toggling)
+#tripcode_toggle: true
 
 # enable checking the whitelist. If enabled, a user will be disallowed from joining unless they've been added to the whitelist.
 whitelist: true

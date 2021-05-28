@@ -45,6 +45,7 @@ types = NumericEnum([
 	"EXPOSE_TO",
 	"EXPOSED",
 	"NEW_USER",
+	"WHITELIST_INFO",
 	"WHITELIST_SUCCESS",
 
 	"ERR_NO",
@@ -74,6 +75,7 @@ types = NumericEnum([
 	"USERS_INFO",
 	"USERS_INFO_EXTENDED",
 
+	"PROGRAM_START",
 	"PROGRAM_VERSION",
 	"HELP_MODERATOR",
 	"HELP_ADMIN",
@@ -120,6 +122,7 @@ format_strs = {
 	types.EXPOSE_TO: "{realname}",
 	types.EXPOSED: em("Your real handle has been exposed to {name!x}."),
 	types.NEW_USER: "A new user has tried joining.",
+	types.WHITELIST_INFO: "Please select a recent user from the list below:\n<i>(Warning: This is a new feature that is not completed.)</i>",
 	types.WHITELIST_SUCCESS: "☑ Success. Please delete your command so that sensitive information is not hanging around.",
 
 	types.ERR_NO: "Actually no",
@@ -167,7 +170,8 @@ format_strs = {
 		"<b>{active}</b> <i>active</i>, {inactive} <i>inactive and</i> "+
 		"{blacklisted} <i>blacklisted users</i> (<i>total</i>: {total})",
 
-	types.PROGRAM_VERSION: "secretlounge-ng v{version} ~ https://github.com/sfan5/secretlounge-ng",
+	types.PROGRAM_START: "<b>Furry Lounge has restarted.</b>\nsecretlounge-ng v{version}",
+	types.PROGRAM_VERSION: "secretlounge-ng v{version} ~ https://github.com/dogmike/secretlounge-ng",
 	types.HELP_MODERATOR:
 		"<i>Moderators can use the following commands</i>:\n"+
 		"  /modhelp - show this text\n"+
