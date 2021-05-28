@@ -462,7 +462,7 @@ def delete_message(user, msid):
 	return rp.Reply(rp.types.SUCCESS)
 
 @requireUser
-@requireRank(RANKS.admin)
+@requireRank(RANKS.mod)
 def uncooldown_user(user, oid2=None, username2=None):
 	if oid2 is not None:
 		user2 = getUserByOid(oid2)
@@ -487,7 +487,21 @@ def uncooldown_user(user, oid2=None, username2=None):
 @requireUser
 @requireRank(RANKS.admin)
 def show_whitelist(c_user):
-	return rp.Reply(rp.types.WHITELIST_INFO)
+	buttons = []
+	for user in db.iterateUsers():
+		try:
+			db.getWhitelistedUser(id=user.id)
+			continue
+		except KeyError as e:
+			tag = "@"+user.username if user.username else user.realname
+
+			buttons.append([{
+				"text": tag,
+				"callback_data": "whitelist_"+user.id
+			}])
+	if not len(buttons):
+		return rp.Reply(rp.types.ERR_NO_WAITLIST)
+	return rp.Reply(rp.types.WHITELIST_INFO, buttons=buttons)
 
 @requireUser
 @requireRank(RANKS.admin)

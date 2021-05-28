@@ -149,7 +149,7 @@ def send_answer(ev, m, reply_to=False, whitelist=False):
 		return
 	elif isinstance(m, list): #forwarding a bunch of messages
 		for m2 in m:
-			send_answer(ev, m2, reply_to)
+			send_answer(ev, m2, reply_to, whitelist)
 		return
 
 	reply_to = ev.message_id if reply_to else None
@@ -413,16 +413,8 @@ def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None, whiteli
 			kwargs2["reply_to_message_id"] = reply_to
 		if ev.type == rp.types.CUSTOM:
 			kwargs2["disable_web_page_preview"] = True
-		if whitelist:
-			kwargs2["reply_markup"] = json.dumps({"inline_keyboard": [[
-				{
-					"text": "A",
-					"callback_data": "A1"            
-				}, 
-				{
-					"text": "B",
-					"callback_data": "C1"            
-				}]]})
+		if whitelist: #or some other signifier that says "it has buttons!"
+			kwargs2["reply_markup"] = json.dumps({"inline_keyboard": ev.buttons})
 		return bot.send_message(chat_id, rp.formatForTelegram(ev), parse_mode="HTML", **kwargs2)
 	elif isinstance(ev, FormattedMessage):
 		kwargs2 = {}

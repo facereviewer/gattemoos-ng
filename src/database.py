@@ -383,11 +383,13 @@ CREATE TABLE IF NOT EXISTS `users` (
 		param = list(newuser.values())
 		with self.lock:
 			self.db.execute(sql, param)
-	def addWhitelistedUser(self, id=None): #if a username had been added, it was converted into an ID before coming here.
+	def addWhitelistedUser(self, id=None, toWhitelist=True): #if a username had been added, it was converted into an ID before coming here.
 		if id is None:
 			raise ValueError()
-		#sql = "DELETE FROM whitelist WHERE id = ?" #testing
-		sql = "INSERT INTO whitelist(id) VALUES (?)"
+		if toWhitelist:
+			sql = "INSERT INTO whitelist(id) VALUES (?)"
+		else:
+			sql = "DELETE FROM whitelist WHERE id = ?"
 		param = str(id).strip().lower()
 		with self.lock:
 			self.db.execute(sql, (param, ))

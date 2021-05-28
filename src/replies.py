@@ -24,6 +24,7 @@ class Reply():
 	def __init__(self, type, **kwargs):
 		self.type = type
 		self.kwargs = kwargs
+		self.buttons = kwargs["buttons"] if "buttons" in kwargs else [[]]
 
 types = NumericEnum([
 	"CUSTOM",
@@ -69,6 +70,7 @@ types = NumericEnum([
 	"ERR_NEED_TRIPCODE",
 	"ERR_MEDIA_LIMIT",
 	"ERR_EXPOSE_CONFIRM",
+	"ERR_NO_WAITLIST",
 
 	"USER_INFO",
 	"USER_INFO_MOD",
@@ -152,6 +154,7 @@ format_strs = {
 	types.ERR_NEED_TRIPCODE: "<i>This chat requires a tripcode to be set before you can send messages.\nPlease use <code>/tripcode somename#apassword</code> where 'somename' is any name you'd like and 'apassword' is a secret password that will protect your identity.</i>",
 	types.ERR_MEDIA_LIMIT: em("You can't send media or forward messages at this time, try again later."),
 	types.ERR_EXPOSE_CONFIRM: "<i>This will expose your real username. Please use <code>/exposeto yes</code> while replying to someone's message to confirm that you want to expose your username to them.</i>",
+	types.ERR_NO_WAITLIST: "There is no one waiting to be whitelisted.",
 
 	types.USER_INFO: lambda warnings, cooldown, **_:
 		"<b>id</b>: {id}, <b>username</b>: {username!x}, <b>rank</b>: {rank_i} ({rank})\n"+
