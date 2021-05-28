@@ -491,16 +491,19 @@ def show_whitelist(c_user):
 	for user in db.iterateUsers():
 		try:
 			db.getWhitelistedUser(id=user.id)
-			continue
 		except KeyError as e:
-			tag = "@"+user.username if user.username else user.realname
-
-			buttons.append([{
-				"text": tag,
-				"callback_data": "whitelist_"+user.id
-			}])
+			if not user.isBlacklisted():
+				tag = "@"+user.username if user.username else user.realname
+				buttons.append([{
+					"text": tag,
+					"callback_data": "whitelist_"+str(user.id)
+				}])
 	if not len(buttons):
 		return rp.Reply(rp.types.ERR_NO_WAITLIST)
+	buttons.append([{
+		"text": "Cancel",
+		"callback_data": "whitelist_cancel"
+	}])
 	return rp.Reply(rp.types.WHITELIST_INFO, buttons=buttons)
 
 @requireUser
