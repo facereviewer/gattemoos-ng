@@ -4,8 +4,11 @@ import time
 import json
 import re
 
+import traceback
+
 import src.core as core
 import src.replies as rp
+from src.database import User
 from src.util import MutablePriorityQueue, genTripcode
 from src.globals import *
 
@@ -83,6 +86,30 @@ def init(config, _db, _ch):
 		registered_commands[c] = globals()["cmd_" + c]
 	set_handler(relay, content_types=types)
 
+	
+	@bot.callback_query_handler(func=lambda call: True)
+	def callback_query(call):
+		#logging.info(str(call))
+		#logging.info("starting")
+		c_user = db.getUser(id=call.from_user.id)
+		msid = call.message.id
+		if call.data == "whitelist_cancel":
+			core._push_system_message(rp.Reply(rp.types.ERR_NO), who=c_user)
+			core.delete_message(c_user, msid, False)
+			try:
+				bot.answer_callback_query(call.id, "Cancelled", show_alert=False)
+			except Exception as e:
+				return
+		else:
+			for user in db.iterateUsers():
+				if call.data == "whitelist_"+str(user.id):
+					core.whitelist_user(c_user, str(user.id), msid)
+					core._push_system_message(rp.Reply(rp.types.SUCCESS), who=c_user)
+					try:
+						bot.answer_callback_query(call.id, "", show_alert=False)
+					except Exception as e:
+						return
+
 	core._push_system_message(rp.Reply(rp.types.PROGRAM_START, version=VERSION))
 
 def set_handler(func, *args, **kwargs):
@@ -100,6 +127,7 @@ def run():
 		except Exception as e:
 			# you're not supposed to call .polling() more than once but I'm left with no choice
 			logging.warning("%s while polling Telegram, retrying.", type(e).__name__)
+			#logging.info(traceback.print_exc())
 			time.sleep(1)
 
 def register_tasks(sched):
@@ -324,7 +352,9 @@ class QueueItem():
 			logging.exception("Exception raised during queued message")
 
 def get_priority_for(user):
-	if user is None:
+	#logging.info("\n"+str(type(user)))
+	#logging.info(dir(user))
+	if user is None:# or not isinstance(user, User):
 		# user doesn't exist (yet): handle as rank=0, lastActive=<now>
 		# cf. User.getMessagePriority in database.py
 		return max(RANKS.values()) << 16
@@ -452,11 +482,16 @@ def send_to_single(ev, msid, user, *, reply_msid=None, force_caption=None):
 	if reply_msid is not None:
 		reply_to = ch.lookupMapping(user.id, msid=reply_msid)
 
+	# if reply_to is None:
+	# 	return
+
 	user_id = user.id
 	def f():
 		while True:
 			try:
 				ev2 = send_to_single_inner(user_id, ev, reply_to, force_caption)
+			except telebot.apihelper.ApiTelegramException as e:
+				return
 			except telebot.apihelper.ApiException as e:
 				retry = check_telegram_exc(e, user_id)
 				if retry:
@@ -507,9 +542,9 @@ class MyReceiver(core.Receiver):
 			send_to_single(m, msid, user, reply_msid=reply_msid)
 
 	@staticmethod
-	def delete(msid):
+	def delete(msid, user_id=None):
 		tmp = ch.getMessage(msid)
-		except_id = None if tmp is None else tmp.user_id
+		except_id = None #if tmp is None else tmp.user_id
 		message_queue.delete(lambda item, msid=msid: item.msid == msid)
 		# FIXME: there's a hard to avoid race condition here:
 		# if a message is currently being sent, but finishes after we grab the
@@ -517,17 +552,23 @@ class MyReceiver(core.Receiver):
 		for user in db.iterateUsers():
 			if not user.isJoined():
 				continue
-			if user.id == except_id:
-				continue
+			# if user.id == except_id:
+			# 	continue
 
 			id = ch.lookupMapping(user.id, msid=msid)
-			if id is None:
-				continue
+			if id is None and user_id is not None:
+				try:
+					bot.delete_message(user_id, msid)
+					return
+				except telebot.apihelper.ApiException as e:
+					user_id = None
 			user_id = user.id
 			def f(user_id=user_id, id=id):
 				while True:
 					try:
 						bot.delete_message(user_id, id)
+					except telebot.apihelper.ApiTelegramException as e:
+						return
 					except telebot.apihelper.ApiException as e:
 						retry = check_telegram_exc(e, None)
 						if retry:
@@ -682,7 +723,8 @@ def cmd_blacklist(ev, arg):
 @takesArgument()
 def cmd_unblacklist(ev, arg):
 	c_user = UserContainer(ev.from_user)
-	return send_answer(ev, core.unblacklist_user(c_user, arg), True)
+	core.delete_message(c_user, ev.message_id, False)
+	return send_answer(ev, core.unblacklist_user(c_user, arg))
 
 def plusone(ev):
 	c_user = UserContainer(ev.from_user)
@@ -789,9 +831,8 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 
 		send_to_single(ev_tosend, msid, user2,
 			reply_msid=reply_msid, force_caption=force_caption)
-	#You can't actually delete things yet
-	# if ev.content_type == "poll" and not is_forward(ev):
-	# 	core.delete_message(user, msid)
+	if ev.content_type == "poll" and not is_forward(ev):
+		core.delete_message(user, msid, False)
 
 @takesArgument(optional=True)
 def cmd_exposeto(ev, arg):

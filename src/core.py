@@ -170,10 +170,10 @@ class Sender(Receiver): # flawless class hierachy I know...
 		for r in Sender.receivers:
 			r.reply(m, msid, who, except_who, reply_to)
 	@staticmethod
-	def delete(msid):
+	def delete(msid, user_id=None):
 		logging.debug("delete(msid=%d)", msid)
 		for r in Sender.receivers:
-			r.delete(msid)
+			r.delete(msid, user_id)
 	@staticmethod
 	def stop_invoked(who, delete_out=False):
 		logging.debug("stop_invoked(who=%s)", who)
@@ -447,17 +447,19 @@ def warn_user(user, msid, delete=False):
 
 @requireUser
 @requireRank(RANKS.mod)
-def delete_message(user, msid):
+def delete_message(user, msid, warn=True):
 	if not allow_remove_command:
 		return rp.Reply(rp.types.ERR_COMMAND_DISABLED)
+
+	Sender.delete(msid, user.id)
 
 	cm = ch.getMessage(msid)
 	if cm is None or cm.user_id is None:
 		return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
 
 	user2 = db.getUser(id=cm.user_id)
-	_push_system_message(rp.Reply(rp.types.MESSAGE_DELETED), who=user2, reply_to=msid)
-	Sender.delete(msid)
+	if warn:
+		_push_system_message(rp.Reply(rp.types.MESSAGE_DELETED), who=user2, reply_to=msid)
 	logging.info("%s deleted a message from [%s]", user, user2.getObfuscatedId())
 	return rp.Reply(rp.types.SUCCESS)
 
@@ -509,11 +511,9 @@ def show_whitelist(c_user):
 @requireUser
 @requireRank(RANKS.admin)
 def whitelist_user(c_user, username, msid):
-
-	Sender.delete(msid)
-
 	original_name = username
 	username = username.strip().lower()
+
 	user_id = None
 	if username.startswith("@"):
 		for user in db.iterateUsers():
@@ -521,16 +521,20 @@ def whitelist_user(c_user, username, msid):
 				user_id = user.id
 	elif re.search("^[0-9+]{5,}$",username) is not None:
 		user_id = username
+
 	if user_id is not None:
 		try:
 			db.getWhitelistedUser(user_id)
+			delete_message(c_user, msid, False)
 			return rp.Reply(rp.types.ERR_ALREADY_WHITELISTED)
 		except KeyError as e:
 			db.addWhitelistedUser(user_id)
 	else:
+		delete_message(c_user, msid, False)
 		return rp.Reply(rp.types.ERR_NO_USER)
 	logging.info("%s was whitelisted by %s", original_name, c_user)
 	#FIX: this can go away after the buttons work.
+	delete_message(c_user, msid, False)
 	return rp.Reply(rp.types.WHITELIST_SUCCESS)
 
 @requireUser
