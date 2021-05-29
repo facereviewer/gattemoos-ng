@@ -60,6 +60,7 @@ types = NumericEnum([
 	"ERR_COOLDOWN",
 	"ERR_NOTWHITELISTED",
 	"ERR_ALREADY_WHITELISTED",
+	"ERR_NOT_BLACKLISTED",
 	"ERR_BLACKLISTED",
 	"ERR_ALREADY_UPVOTED",
 	"ERR_UPVOTE_OWN_MESSAGE",
@@ -76,6 +77,7 @@ types = NumericEnum([
 	"USER_INFO_MOD",
 	"USERS_INFO",
 	"USERS_INFO_EXTENDED",
+	"POLL",
 
 	"PROGRAM_START",
 	"PROGRAM_VERSION",
@@ -140,6 +142,7 @@ format_strs = {
 		em( "You haven't been whitelisted.") +
 		( em("\ncontact:") + " {contact}" if contact else "" ),
 	types.ERR_ALREADY_WHITELISTED: em("This user has already been added to the whitelist."),
+	types.ERR_NOT_BLACKLISTED: "This user has not been banned.",
 	types.ERR_BLACKLISTED: lambda reason, contact, **_:
 		em( "You've been blacklisted" + (reason and " for {reason!x}" or "") )+
 		( em("\ncontact:") + " {contact}" if contact else "" ),
@@ -172,6 +175,7 @@ format_strs = {
 	types.USERS_INFO_EXTENDED:
 		"<b>{active}</b> <i>active</i>, {inactive} <i>inactive and</i> "+
 		"{blacklisted} <i>blacklisted users</i> (<i>total</i>: {total})",
+	types.POLL: "Your poll has been forwarded anonymously.",
 
 	types.PROGRAM_START: "<b>Furry Lounge has restarted.</b>\nsecretlounge-ng v{version}",
 	types.PROGRAM_VERSION: "secretlounge-ng v{version} ~ https://github.com/dogmike/secretlounge-ng",

@@ -508,7 +508,10 @@ def show_whitelist(c_user):
 
 @requireUser
 @requireRank(RANKS.admin)
-def whitelist_user(c_user, username):
+def whitelist_user(c_user, username, msid):
+
+	Sender.delete(msid)
+
 	original_name = username
 	username = username.strip().lower()
 	user_id = None
@@ -526,11 +529,14 @@ def whitelist_user(c_user, username):
 			db.addWhitelistedUser(user_id)
 	else:
 		return rp.Reply(rp.types.ERR_NO_USER)
-
-
 	logging.info("%s was whitelisted by %s", original_name, c_user)
-	_push_system_message(rp.Reply(rp.types.WHITELIST_SUCCESS), who=c_user)
-	return []
+	#FIX: this can go away after the buttons work.
+	return rp.Reply(rp.types.WHITELIST_SUCCESS)
+
+@requireUser
+@requireRank(RANKS.admin)
+def whitelist_reply(call):
+  logging.info(call)
 
 @requireUser
 @requireRank(RANKS.admin)
@@ -550,6 +556,32 @@ def blacklist_user(user, msid, reason):
 		who=user2, reply_to=msid)
 	Sender.delete(msid)
 	logging.info("%s was blacklisted by %s for: %s", user2, user, reason)
+	return rp.Reply(rp.types.SUCCESS)
+
+@requireUser
+@requireRank(RANKS.admin)
+def unblacklist_user(c_user, username):
+	original_name = username
+	username = username.strip().lower()
+
+	#FIX: should probably make a function to get a userID from a given name/id
+	user_id = None
+	if username.startswith("@"):
+		for user in db.iterateUsers():
+			if "@"+user.username.lower() == username.lower():
+				user_id = user.id
+	elif re.search("^[0-9+]{5,}$",username) is not None:
+		user_id = username
+
+	if user_id is None:
+		return rp.Reply(rp.types.ERR_NO_USER)
+
+	with db.modifyUser(id=user_id) as user2:
+		if user2.rank != RANKS.banned:
+			return rp.Reply(rp.types.ERR_NOT_BLACKLISTED)
+		user2.setBlacklisted(toBlacklist=False)
+		#FIX: Anything about warnings and stuff? Might need to reduce if too high
+	logging.info("%s was unblacklisted by %s", user2, c_user)
 	return rp.Reply(rp.types.SUCCESS)
 
 @requireUser

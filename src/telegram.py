@@ -43,6 +43,13 @@ def init(config, _db, _ch):
 	telebot.apihelper.READ_TIMEOUT = 20
 
 	bot = telebot.TeleBot(config["bot_token"], threaded=False)
+
+	# FIX: There might be a way to let the bot delete messages.
+	# permissions = {'can_send_messages': True, 'can_send_media_messages': True, 'can_send_polls': True, 'can_send_other_messages': True, 'can_add_web_page_previews': True, 'can_change_info': True, 'can_invite_users': True, 'can_pin_messages': True}
+	# new_permissions = ChatPermissions(**permissions)
+	# bot.set_chat_permissions(chat_id=ch.chat_id, permissions=new_permissions)
+
+	
 	db = _db
 	ch = _ch
 	message_queue = MutablePriorityQueue()
@@ -60,7 +67,7 @@ def init(config, _db, _ch):
 		types += ["contact"]
 	if allow_documents:
 		types += ["document"]
-	types += ["animation", "audio", "photo", "sticker", "video", "video_note", "voice"]
+	types += ["animation", "audio", "photo", "sticker", "video", "video_note", "voice", "poll"]
 
 	# Default commands
 	#cmds = [
@@ -69,7 +76,7 @@ def init(config, _db, _ch):
 	
 	# Trimmed command list
 	cmds = [
-		"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "whitelist", "blacklist", "exposeto", "tripcode", "tripcodetoggle"
+		"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "whitelist", "blacklist", "unblacklist", "exposeto", "tripcode", "tripcodetoggle"
 	]
 	for c in cmds: # maps /<c> to the function cmd_<c>
 		c = c.lower()
@@ -144,19 +151,19 @@ def wrap_core(func, reply_to=False):
 		send_answer(ev, m, reply_to=reply_to)
 	return f
 
-def send_answer(ev, m, reply_to=False, whitelist=False):
+def send_answer(ev, m, reply_to=False):
 	if m is None:
 		return
 	elif isinstance(m, list): #forwarding a bunch of messages
 		for m2 in m:
-			send_answer(ev, m2, reply_to, whitelist)
+			send_answer(ev, m2, reply_to)
 		return
 
 	reply_to = ev.message_id if reply_to else None
 	def f(ev=ev, m=m):
 		while True:
 			try:
-				send_to_single_inner(ev.chat.id, m, reply_to=reply_to, whitelist=whitelist)
+				send_to_single_inner(ev.chat.id, m, reply_to=reply_to)
 			except telebot.apihelper.ApiException as e:
 				retry = check_telegram_exc(e, None)
 				if retry:
@@ -401,19 +408,27 @@ def resend_message(chat_id, ev, reply_to=None, force_caption: FormattedMessage=N
 		return bot.send_contact(chat_id, **kwargs)
 	elif ev.content_type == "sticker":
 		return bot.send_sticker(chat_id, ev.sticker.file_id, **kwargs)
+	elif ev.content_type == "poll":
+		return ev
 	else:
 		raise NotImplementedError("content_type = %s" % ev.content_type)
 
 # send a message `ev` (multiple types possible) to Telegram ID `chat_id`
 # returns the sent Telegram message
-def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None, whitelist=None):
+def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None):
 	if isinstance(ev, rp.Reply):
 		kwargs2 = {}
 		if reply_to is not None:
 			kwargs2["reply_to_message_id"] = reply_to
 		if ev.type == rp.types.CUSTOM:
 			kwargs2["disable_web_page_preview"] = True
-		if whitelist: #or some other signifier that says "it has buttons!"
+		if not ev.buttons == [[]]:
+			#FIX: I'm supposed to be like...
+			# markup = types.ReplyKeyboardMarkup(row_width=1)
+			# itembtn1 = types.KeyboardButton('a')
+			# itembtn2 = types.KeyboardButton('v')
+			# markup.add(ev.buttons)
+			# kwargs2["reply_markup"] = markup
 			kwargs2["reply_markup"] = json.dumps({"inline_keyboard": ev.buttons})
 		return bot.send_message(chat_id, rp.formatForTelegram(ev), parse_mode="HTML", **kwargs2)
 	elif isinstance(ev, FormattedMessage):
@@ -423,6 +438,7 @@ def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None, whiteli
 		if ev.html:
 			kwargs2["parse_mode"] = "HTML"
 		return bot.send_message(chat_id, ev.content, **kwargs2)
+
 
 	return resend_message(chat_id, ev, reply_to=reply_to, force_caption=force_caption)
 
@@ -489,6 +505,7 @@ class MyReceiver(core.Receiver):
 			if user == except_who and not user.debugEnabled:
 				continue
 			send_to_single(m, msid, user, reply_msid=reply_msid)
+
 	@staticmethod
 	def delete(msid):
 		tmp = ch.getMessage(msid)
@@ -643,9 +660,13 @@ def cmd_uncooldown(ev, arg):
 def cmd_whitelist(ev, arg):
 	c_user = UserContainer(ev.from_user)
 	if arg.strip() == "":
-		return send_answer(ev, core.show_whitelist(c_user), whitelist=True)
+		return send_answer(ev, core.show_whitelist(c_user))
 		
-	return send_answer(ev, core.whitelist_user(c_user, arg), True)
+	return send_answer(ev, core.whitelist_user(c_user, arg, ev.message_id))
+
+# @bot.callback_query_handler(func=lambda call: True)
+# def  test_callback(call):
+# 	core.whitelist_reply(call)
 
 @takesArgument(optional=True)
 def cmd_blacklist(ev, arg):
@@ -657,6 +678,11 @@ def cmd_blacklist(ev, arg):
 	if reply_msid is None:
 		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
 	return send_answer(ev, core.blacklist_user(c_user, reply_msid, arg), True)
+
+@takesArgument()
+def cmd_unblacklist(ev, arg):
+	c_user = UserContainer(ev.from_user)
+	return send_answer(ev, core.unblacklist_user(c_user, arg), True)
 
 def plusone(ev):
 	c_user = UserContainer(ev.from_user)
@@ -700,6 +726,7 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 		return send_answer(ev, msid) # don't relay message, instead reply
 
 	user = db.getUser(id=ev.from_user.id)
+	#On by default
 	if not tripcode_toggle:
 		tripcode=True
 
@@ -733,15 +760,38 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 
 	# relay message to all other users
 	logging.debug("relay(): msid=%d reply_msid=%r", msid, reply_msid)
+
+	if ev.content_type == "poll" and not is_forward(ev):
+		core._push_system_message(rp.Reply(rp.types.POLL), who=user)
+		poll = None
 	for user2 in db.iterateUsers():
 		if not user2.isJoined():
 			continue
+
+		if ev.content_type == "poll" and not is_forward(ev):
+			if poll is None:
+				kwargs2 = {}
+				kwargs2["is_anonymous"]=True #Careful!
+				kwargs2["type"]=ev.poll.type
+				kwargs2["allows_multiple_answers"]=ev.poll.allows_multiple_answers
+				kwargs2["correct_option_id"]=ev.poll.correct_option_id
+				kwargs2["explanation"]=ev.poll.explanation
+				kwargs2["open_period"]=ev.poll.open_period
+				kwargs2["close_date"]=ev.poll.close_date
+				poll = bot.send_poll(user2.id, question=ev.poll.question, options=ev.poll.options, **kwargs2)
+				#logging.info(str(poll.poll))
+			else:
+				bot.forward_message(user2.id, poll.chat.id, poll.message_id)
+
 		if user2 == user and not user.debugEnabled:
 			ch.saveMapping(user2.id, msid, ev.message_id)
 			continue
 
 		send_to_single(ev_tosend, msid, user2,
 			reply_msid=reply_msid, force_caption=force_caption)
+	#You can't actually delete things yet
+	# if ev.content_type == "poll" and not is_forward(ev):
+	# 	core.delete_message(user, msid)
 
 @takesArgument(optional=True)
 def cmd_exposeto(ev, arg):
