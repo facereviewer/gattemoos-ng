@@ -618,6 +618,7 @@ def expose_to_user(user, msid, realname):
 
 
 
+
 @requireUser
 def prepare_user_message(user: User, msg_score, *, is_media=False, expose=False, tripcode=False):
 	# prerequisites

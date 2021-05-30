@@ -8,7 +8,6 @@ import traceback
 
 import src.core as core
 import src.replies as rp
-from src.database import User
 from src.util import MutablePriorityQueue, genTripcode
 from src.globals import *
 
@@ -86,21 +85,64 @@ def init(config, _db, _ch):
 		registered_commands[c] = globals()["cmd_" + c]
 	set_handler(relay, content_types=types)
 
+
+	@bot.edited_message_handler(func=lambda msg: True)
+	def callback_query(ev):
+		if ev.content_type=="text":
+			c_user = db.getUser(id=ev.from_user.id)
+
+			#Just need to use the right user_id, I think, and it'll come out with the correct message id.
+			cache_msid = ch.lookupMapping(ev.from_user.id, data=ev.message_id)
+			if cache_msid is None:
+				# FIX: messages should be more like the rest, with ev
+				core._push_system_message(rp.Reply(rp.types.ERR_NOT_IN_CACHE),who=c_user)
+				return
+
+			fmt = FormattedMessageBuilder(None, ev.caption, ev.text)
+			formatter_replace_links(ev, fmt)
+			formatter_network_links(fmt)
+			# FIX: can store whether a tripcode was used
+			# if tripcode or c_user.tripcodeToggle:
+			if not tripcode_toggle or c_user.tripcodeToggle:
+				if c_user.tripcode is None:
+					core._push_system_message(rp.Reply(rp.types.ERR_NEED_TRIPCODE), who=c_user)
+
+				formatter_tripcoded_message(c_user, fmt)
+			formatter_edited_message(fmt)
+			fmt = fmt.build()
+
+			for user in db.iterateUsers():
+				if user.id == ev.chat.id:
+					continue
+				chat_msid = ch.lookupMapping(user.id, msid=cache_msid)
+				try:
+					bot.edit_message_text(fmt.content, user.id, chat_msid, parse_mode="HTML")
+				except Exception as e:
+					logging.error("Error editing message. "+str(e))
+			
+
+
 	
 	@bot.callback_query_handler(func=lambda call: True)
 	def callback_query(call):
-		#logging.info(str(call))
-		#logging.info("starting")
 		c_user = db.getUser(id=call.from_user.id)
 		msid = call.message.id
 		if call.data == "whitelist_cancel":
-			core._push_system_message(rp.Reply(rp.types.ERR_NO), who=c_user)
+			#core._push_system_message(rp.Reply(rp.types.ERR_NO), who=c_user)
 			core.delete_message(c_user, msid, False)
 			try:
 				bot.answer_callback_query(call.id, "Cancelled", show_alert=False)
 			except Exception as e:
 				return
-		else:
+		else: 
+			# FIX could find instead of looping.
+			# try:
+			# 	user = db.getUser(id=call.data[call.data.find("_")+1:])
+			# 	core.whitelist_user(c_user, str(user.id), msid)
+			# 	core._push_system_message(rp.Reply(rp.types.SUCCESS), who=c_user)
+			# except KeyError as e:
+			#		return some kind of error message?
+			# next time I have someone to whitelist I'll test it
 			for user in db.iterateUsers():
 				if call.data == "whitelist_"+str(user.id):
 					core.whitelist_user(c_user, str(user.id), msid)
@@ -127,7 +169,7 @@ def run():
 		except Exception as e:
 			# you're not supposed to call .polling() more than once but I'm left with no choice
 			logging.warning("%s while polling Telegram, retrying.", type(e).__name__)
-			#logging.info(traceback.print_exc())
+			#logging.error(traceback.print_exc())
 			time.sleep(1)
 
 def register_tasks(sched):
@@ -333,6 +375,9 @@ def formatter_tripcoded_message(user: core.User, fmt: FormattedMessageBuilder):
 	fmt.prepend(tripname)
 	fmt.prepend("<b>", True)
 
+def formatter_edited_message(fmt: FormattedMessageBuilder):
+	fmt.append("\n<code>            <em>(edited)</em></code>", True)
+
 ###
 
 # Message sending (queue-related)
@@ -354,7 +399,7 @@ class QueueItem():
 def get_priority_for(user):
 	#logging.info("\n"+str(type(user)))
 	#logging.info(dir(user))
-	if user is None:# or not isinstance(user, User):
+	if user is None:
 		# user doesn't exist (yet): handle as rank=0, lastActive=<now>
 		# cf. User.getMessagePriority in database.py
 		return max(RANKS.values()) << 16
@@ -490,6 +535,7 @@ def send_to_single(ev, msid, user, *, reply_msid=None, force_caption=None):
 		while True:
 			try:
 				ev2 = send_to_single_inner(user_id, ev, reply_to, force_caption)
+			#FIX: This is because of my deletion code
 			except telebot.apihelper.ApiTelegramException as e:
 				return
 			except telebot.apihelper.ApiException as e:
@@ -567,6 +613,7 @@ class MyReceiver(core.Receiver):
 				while True:
 					try:
 						bot.delete_message(user_id, id)
+					#FIX: This is because of my deletion code
 					except telebot.apihelper.ApiTelegramException as e:
 						return
 					except telebot.apihelper.ApiException as e:
@@ -606,6 +653,7 @@ def cmd_info(ev):
 		return send_answer(ev, core.get_info(c_user), True)
 
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+
 	if reply_msid is None:
 		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
 	return send_answer(ev, core.get_info_mod(c_user, reply_msid), True)
@@ -821,7 +869,6 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 				kwargs2["open_period"]=ev.poll.open_period
 				kwargs2["close_date"]=ev.poll.close_date
 				poll = bot.send_poll(user2.id, question=ev.poll.question, options=ev.poll.options, **kwargs2)
-				#logging.info(str(poll.poll))
 			else:
 				bot.forward_message(user2.id, poll.chat.id, poll.message_id)
 
