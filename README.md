@@ -39,7 +39,6 @@ tripcodetoggle - Toggle tripcode to be on by default on messages
 start - Join the chat (start receiving messages)
 stop - Leave the chat (stop receiving messages)
 users - Find out how many users are in the chat
-info - Get info about your account
 exposeto - Send your real username to someone else
 motd - Show the welcome message
 tripcode - Show or set a tripcode for your messages
@@ -67,10 +66,10 @@ tripcode - Show or set a tripcode for your messages
 2. On your keyboard, press `Ctrl + C` to stop the program
 
 ## Create another bot
-2. Make a `bot2` directory and copy `config.yaml.example` to `bot2/config.yaml`
-3. Edit `bot2/config.yaml` and paste in your new bot key from BotFather. Also change 'bot1' to 'bot2' on the database line.
-4. `screen -dmS bot2`
-5. When you start secretlounge-ng, use the -c flag: `./secretlounge-ng -c bot2/config.yaml`
+1. Make a `bot2` directory and copy `config.yaml.example` to `bot2/config.yaml`
+2. Edit `bot2/config.yaml` and paste in your new bot key from BotFather. Also change 'bot1' to 'bot2' on the database line.
+3. `screen -dmS bot2`
+4. When you start secretlounge-ng, use the -c flag: `./secretlounge-ng -c bot2/config.yaml`
 
 ## Security
 You should harden your server by doing a few other things:
@@ -79,36 +78,25 @@ You should harden your server by doing a few other things:
 
 ## FAQ
 
-1. **How do I unban a blacklisted user from my bot?**
+1. **How do I ban a user from my bot?**
 
-You can use `/unblacklist 12345678` with those numbers replaced by their username or ID, but be careful you don't accidentally send that info out to everyone.
+You'll need to reply to one of their messages with `/ban reason` where the 'reason' is a message sent to the user and stored in the database. (If they've never said anything, you'll have to use the server script.)
 
-To do it securely, you can run a script from your server. You need their Telegram User ID (preferred) or username/profile name.
-If you have a name you can use `./util/blacklist.py find` to search your bot's database for the user record.
+2. **How do I unban a blacklisted user from my bot?**
 
-You can then run `./util/blacklist.py unban 12345678` to remove the ban.
+You can use `/unban` and choose the user from the buttons.
 
-(We could add a button interface, but the blacklist could grow far too large for that.)
+You can also use `/unban 12345678` with those numbers replaced by their username or ID, but be careful you don't accidentally send that info out to everyone.
 
-2. **How do I whitelist a user for my bot?**
+3. **How do I whitelist a user for my bot?**
 
-Just use `/whitelist` and choose the user from the buttons. You can also do it before they try to join by using `/whitelist 12345678` with those numbers replaced by their user ID. Be careful any time you're using IDs in commands.
+Just use `/whitelist` after they've tried joining, and choose the user from the buttons. You can also do it before they try to join by using `/whitelist 12345678` with those numbers replaced by their user ID. Be careful not to accidentally send their ID to everyone.
 
-3. **How do I demote someone I promoted to mod/admin at some point?**
+4. **How do I demote someone I promoted to mod/admin at some point?**
 
-You can reply to a message with `/blacklist` and then use `/unblacklist @username` (or ID). Otherwise you'll have to do it on the server.
+Just use `/demote` and choose the user from the buttons. You can also try `/demote name` where 'name' is their tripcode or obfuscated ID. Try using /info on one of their messages to see their oid.
 
-If you have their user ID, you can skip this step: 
-Either use the find utility like explained above or run
-`./util/perms.py list` to list all users with elevated rank.
-
-Simply run `./util/perms.py set 12345678 user` to remove the users' privileges.
-
-This can also be used to grant an user higher privileges by exchanging the last argument with "*mod*" or "*admin*".
-
-This is all silly. There'll be a /demote command in the future.
-
-4. **What is the suggested setup to run multiple bots?**
+5. **What is the suggested setup to run multiple bots?**
 
 The administrative scripts support a structure like the following where each bot has its' own subdirectory:
 

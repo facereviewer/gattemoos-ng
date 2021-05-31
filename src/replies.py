@@ -39,6 +39,8 @@ types = NumericEnum([
 	"MESSAGE_DELETED",
 	"PROMOTED_MOD",
 	"PROMOTED_ADMIN",
+	"DEMOTED",
+	"DEMOTELIST_INFO",
 	"KARMA_THANK_YOU",
 	"KARMA_NOTIFICATION",
 	"TRIPCODE_INFO",
@@ -47,14 +49,16 @@ types = NumericEnum([
 	"EXPOSED",
 	"NEW_USER",
 	"WHITELIST_INFO",
-	"WHITELIST_SUCCESS",
+	"UNBLACKLIST_INFO",
 
 	"ERR_NO",
 	"ERR_COMMAND_DISABLED",
+	"ERR_ADMIN_SEARCH",
 	"ERR_NO_REPLY",
 	"ERR_NOT_IN_CACHE",
 	"ERR_NO_USER",
 	"ERR_NO_USER_BY_ID",
+	"ERR_COLLISION",
 	"ERR_ALREADY_WARNED",
 	"ERR_NOT_IN_COOLDOWN",
 	"ERR_COOLDOWN",
@@ -72,6 +76,9 @@ types = NumericEnum([
 	"ERR_MEDIA_LIMIT",
 	"ERR_EXPOSE_CONFIRM",
 	"ERR_NO_WAITLIST",
+	"ERR_NO_UNBLACKLIST",
+	"ERR_NO_LIST",
+	"ERR_NOTHING_TO_DO",
 
 	"USER_INFO",
 	"USER_INFO_MOD",
@@ -100,7 +107,7 @@ def smiley(n):
 
 format_strs = {
 	types.CUSTOM: "{text}",
-	types.SUCCESS: "☑",
+	types.SUCCESS: "✅",
 	types.BOOLEAN_CONFIG: lambda enabled, **_:
 		"<b>{description!x}</b>: " + (enabled and "enabled" or "disabled"),
 
@@ -116,25 +123,29 @@ format_strs = {
 			"given this time, but refrain from posting it again." ),
 	types.PROMOTED_MOD: em("You've been promoted to moderator, run /modhelp for a list of commands."),
 	types.PROMOTED_ADMIN: em("You've been promoted to admin, run /adminhelp for a list of commands."),
+	types.DEMOTED: "You were demoted.",
+	types.DEMOTELIST_INFO: "Please select a mod or admin to demote:",
 	types.KARMA_THANK_YOU: em("You just gave this user some sweet karma, awesome!"),
 	types.KARMA_NOTIFICATION:
 		em( "You've just been given sweet karma! (check /info to see your karma"+
 			" or /toggleKarma to turn these notifications off)" ),
 	types.TRIPCODE_INFO: lambda tripcode, **_:
 		"<b>tripcode</b>: " + ("<code>{tripcode!x}</code>" if tripcode is not None else "unset"),
-	types.TRIPCODE_SET: em("Tripcode set. It will appear as:\n") + "<b>{tripname!x}</b> <code>{tripcode!x}</code>",
+	types.TRIPCODE_SET: em("Tripcode set. It will appear as:\n") + "<b>{tripname!x}</b> <code>{triphash!x}</code>",
 	types.EXPOSE_TO: "{realname}",
 	types.EXPOSED: em("Your real handle has been exposed to {name!x}."),
-	types.NEW_USER: "A new user has tried joining.",
-	types.WHITELIST_INFO: "Please select a recent user from the list below:\n<i>(Warning: This is a new feature that is not completed.)</i>",
-	types.WHITELIST_SUCCESS: "☑ Success. Please delete your command so that sensitive information is not hanging around.",
+	types.NEW_USER: "<b><i>A new user has tried joining.</i></b>",
+	types.WHITELIST_INFO: em("Please select a recent user from the list below to add to the whitelist:"),
+	types.UNBLACKLIST_INFO: em("Please select a banned user from the list below to remove from the blacklist:"),
 
-	types.ERR_NO: "Actually no",
+	types.ERR_NO: em("Actually no"),
 	types.ERR_COMMAND_DISABLED: em("This command has been disabled."),
+	types.ERR_ADMIN_SEARCH: em("Only an admin can search by username!"),
 	types.ERR_NO_REPLY: em("You need to reply to a message to use this command."),
 	types.ERR_NOT_IN_CACHE: em("Message not found in cache... (24h passed or bot was restarted)"),
 	types.ERR_NO_USER: em("No user found by that name!"),
 	types.ERR_NO_USER_BY_ID: em("No user found by that id! Note that all ids rotate every 24 hours."),
+	types.ERR_COLLISION: em("More than one user currently has the same name. Try the command again while replying to their message or use a different kind of ID."),
 	types.ERR_COOLDOWN: em("Your cooldown expires at {until!t}"),
 	types.ERR_ALREADY_WARNED: em("A warning has already been issued for this message."),
 	types.ERR_NOT_IN_COOLDOWN: em("This user is not in a cooldown right now."),
@@ -142,7 +153,7 @@ format_strs = {
 		em( "You haven't been whitelisted.") +
 		( em("\ncontact:") + " {contact}" if contact else "" ),
 	types.ERR_ALREADY_WHITELISTED: em("This user has already been added to the whitelist."),
-	types.ERR_NOT_BLACKLISTED: "This user has not been banned.",
+	types.ERR_NOT_BLACKLISTED: em("This user has not been banned."),
 	types.ERR_BLACKLISTED: lambda reason, contact, **_:
 		em( "You've been blacklisted" + (reason and " for {reason!x}" or "") )+
 		( em("\ncontact:") + " {contact}" if contact else "" ),
@@ -151,13 +162,16 @@ format_strs = {
 	types.ERR_SPAMMY: em("Your message has not been sent. Avoid sending messages too fast, try again later."),
 	types.ERR_SPAMMY_TRIPCODE: em("Your tripcode cannot be set for another {time_left} hours."),
 	types.ERR_INVALID_TRIP_FORMAT:
-		em("Given tripcode is not valid, the format is ")+
-		"<code>name#pass</code>" + em("."),
+		em("Given tripcode is not valid, the format is \n")+
+		"<code>name#pass</code>" + em("\n where your chosen name is no more than 18 characters."),
 	types.ERR_NO_TRIPCODE: em("You don't have a tripcode set."),
-	types.ERR_NEED_TRIPCODE: "<i>This chat requires a tripcode to be set before you can send messages.\nPlease use <code>/tripcode somename#apassword</code> where 'somename' is any name you'd like and 'apassword' is a secret password that will protect your identity.</i>",
+	types.ERR_NEED_TRIPCODE: "<i>This chat requires a tripcode to be set before you can send messages. Please use\n<code>/tripcode somename#apassword</code> where 'somename' is any name you'd like and 'apassword' is a secret password that will protect your identity.</i>",
 	types.ERR_MEDIA_LIMIT: em("You can't send media or forward messages at this time, try again later."),
 	types.ERR_EXPOSE_CONFIRM: "<i>This will expose your real username. Please use <code>/exposeto yes</code> while replying to someone's message to confirm that you want to expose your username to them.</i>",
-	types.ERR_NO_WAITLIST: "There is no one waiting to be whitelisted.",
+	types.ERR_NO_WAITLIST: em("There is no one waiting to be whitelisted."),
+	types.ERR_NO_UNBLACKLIST: em("There has been no one blacklisted."),
+	types.ERR_NO_LIST: em("There is no one to show."),
+	types.ERR_NOTHING_TO_DO: em("Already done!"),
 
 	types.USER_INFO: lambda warnings, cooldown, **_:
 		"<b>id</b>: {id}, <b>username</b>: {username!x}, <b>rank</b>: {rank_i} ({rank})\n"+
@@ -194,13 +208,16 @@ format_strs = {
 		"  /adminhelp - show this text\n"+
 		"  /adminsay &lt;message&gt; - send an official admin message\n"+
 		"  /motd &lt;message&gt; - set the welcome message (HTML formatted)\n"+
-		"  /uncooldown &lt;id | username&gt; - remove cooldown from an user\n"+
+		"  /uncooldown &lt;id | username&gt; - remove cooldown from a user\n"+
+		"  /whitelist - Show a list of users to add to the whitelist.\n"+
 		"  /whitelist &lt;username or id&gt; - Add a user to the whitelist. Usernames only work for users who have tried joining. \n"+
-		"  /mod &lt;username&gt; - promote an user to the moderator rank\n"+
-		"  /admin &lt;username&gt; - promote an user to the admin rank\n"+
+		"  /mod &lt;username&gt; - promote a user to the moderator rank\n"+
+		"  /admin &lt;username&gt; - promote a user to the admin rank\n"+
+		"  /demote - demote an admin or mod to user rank\n"+
 		"\n"+
 		"<i>Or reply to a message and use</i>:\n"+
-		"  /blacklist [reason] - blacklist the user who sent this message",
+		"  /blacklist [reason] - blacklist the user who sent this message (can also use /ban)\n"+
+		"  /unblacklist - show a list of users to unban (can also use /unban)",
 }
 
 localization = {}

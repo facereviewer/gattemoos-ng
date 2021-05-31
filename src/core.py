@@ -47,6 +47,16 @@ def init(config, _db, _ch):
 		c.defaults()
 		db.setSystemConfig(c)
 
+	# update users for new Tripcode DB
+	for user in db.iterateUsers():
+		if not user.tripcode or user.tripname:
+			continue
+		tripname, triphash = genTripcode(user.tripcode, user.salt)
+		with db.modifyUser(id=user.id) as user:
+			user.tripname = tripname
+			user.triphash = triphash
+			
+
 def register_tasks(sched):
 	# spam score handling
 	sched.register(spam_scores.scheduledTask, seconds=SPAM_INTERVAL_SECONDS)
@@ -67,22 +77,47 @@ def updateUserFromEvent(user, c_user):
 	user.lastActive = datetime.now()
 
 def getUserByName(username):
-	username = username.lower()
-	# there *should* only be a single joined user with a given username
-	for user in db.iterateUsers():
-		if not user.isJoined():
-			continue
-		if user.username is not None and user.username.lower() == username:
-			return user
+	if not username:
+		return None
+	username = str(username).strip()
+	if username.startswith("##"):
+		username = username[2:]
+
+	if len(username) < 5:
+		r_user = None
+		user_count = 0
+		for user in db.iterateUsers():
+			if len(username) < 5 and user.getObfuscatedId() == username:
+				r_user = user	
+				user_count+=1
+		if user_count <= 1:
+			return r_user
+		return -1
+	elif username.find("!")>0:
+		r_user = None
+		user_count = 0
+		for user in db.iterateUsers():
+			if user.tripname is not None and user.tripname+user.triphash == username:
+				r_user = user
+		if user_count <= 1:
+			return r_user
+		return -1
+	elif username.startswith("@"):
+		username = username.lower()
+		for user in db.iterateUsers():
+			if user.username is not None and "@"+user.username.lower() == username:
+				return user
+	elif re.search("^[0-9+]{5,}$",username) is not None:
+		try:
+			return db.getUser(id=username)
+		except KeyError as e:
+			return None
 	return None
 
-def getUserByOid(oid):
-	for user in db.iterateUsers():
-		if not user.isJoined():
-			continue
-		if user.getObfuscatedId() == oid:
-			return user
-	return None
+def isTooSensitive(arg, user):
+	# user IDs are not 'sensitive' unless prepended with "##". This allows IDs to be passed in by other parts of the program. Any ID typed by the moderators should be prepended before coming here.
+	# is username and not tripcode, or is ID, and user not admin?
+	return (arg.startswith("##@") and arg.find("!") < 0 or re.search("^##[0-9+]{5,}$",arg) is not None) and user.rank < RANKS.admin
 
 def requireUser(func):
 	def wrapper(c_user, *args, **kwargs):
@@ -229,6 +264,8 @@ def user_join(c_user):
 	if not any(db.iterateUserIds()):
 		user.rank = RANKS.admin
 		db.addWhitelistedUser(user.id)
+		#FIX: make superadmin entry in system that points to this user.
+		# Then we can say if db.getSystemConfig()['superadmin'] = user.id
 
 	ret = [rp.Reply(rp.types.CHAT_JOIN)]
 	if whitelist:
@@ -348,8 +385,7 @@ def toggle_tripcode(user):
 		with db.modifyUser(id=user.id) as user:
 			user.tripcodeToggle = not user.tripcodeToggle
 			new = user.tripcodeToggle
-		tripname, tripcode = genTripcode(user.tripcode, user.salt)
-		return rp.Reply(rp.types.BOOLEAN_CONFIG, description=tripname+tripcode+" tripcode", enabled=new)
+		return rp.Reply(rp.types.BOOLEAN_CONFIG, description=user.tripname+user.triphash+" tripcode", enabled=new)
 
 @requireUser
 def toggle_karma(user):
@@ -360,9 +396,6 @@ def toggle_karma(user):
 
 @requireUser
 def get_tripcode(user):
-	# if not enable_expose:
-	# 	return rp.Reply(rp.types.ERR_COMMAND_DISABLED)
-
 	return rp.Reply(rp.types.TRIPCODE_INFO, tripcode=user.tripcode)
 
 @requireUser
@@ -374,33 +407,37 @@ def set_tripcode(user, text):
 			return rp.Reply(rp.types.ERR_SPAMMY_TRIPCODE,time_left=diff)
 		tripcode_last_used[user.id] = datetime.now()
 
-	# if not enable_expose:
-	# 	return rp.Reply(rp.types.ERR_COMMAND_DISABLED)
-
 	if not (0 < text.find("#") < len(text) - 1):
 		return rp.Reply(rp.types.ERR_INVALID_TRIP_FORMAT)
 	if "\n" in text or text.find("#") > 18:
 		return rp.Reply(rp.types.ERR_INVALID_TRIP_FORMAT)
 
+	tripname, triphash = genTripcode(text, user.salt)
 	with db.modifyUser(id=user.id) as user:
 		user.tripcode = text
-	tripname, tripcode = genTripcode(user.tripcode, user.salt)
-	return rp.Reply(rp.types.TRIPCODE_SET, tripname=tripname, tripcode=tripcode)
+		user.tripname = tripname
+		user.triphash = triphash
+	return rp.Reply(rp.types.TRIPCODE_SET, tripname=tripname, triphash=triphash)
 
 @requireUser
-@requireRank(RANKS.admin)
-def promote_user(user, username2, rank):
-	user2 = getUserByName(username2)
-	if user2 is None:
+@requireRank(RANKS.mod)
+def promote_user(user, username, rank):
+	if isTooSensitive(username, user):
+		return rp.Reply(rp.types.ERR_ADMIN_SEARCH)
+
+	user2 = getUserByName(username)
+	if user2 == -1:
+		return rp.Reply(rp.types.ERR_COLLISION)
+	elif user2 is None:
 		return rp.Reply(rp.types.ERR_NO_USER)
 
 	if user2.rank >= rank:
-		return
+		return rp.Reply(rp.types.ERR_NO)
 	with db.modifyUser(id=user2.id) as user2:
 		user2.rank = rank
-	if rank >= RANKS.admin:
+	if rank == RANKS.admin:
 		_push_system_message(rp.Reply(rp.types.PROMOTED_ADMIN), who=user2)
-	elif rank >= RANKS.mod:
+	elif rank == RANKS.mod:
 		_push_system_message(rp.Reply(rp.types.PROMOTED_MOD), who=user2)
 	logging.info("%s was promoted by %s to: %d", user2, user, rank)
 	return rp.Reply(rp.types.SUCCESS)
@@ -465,17 +502,15 @@ def delete_message(user, msid, warn=True):
 
 @requireUser
 @requireRank(RANKS.mod)
-def uncooldown_user(user, oid2=None, username2=None):
-	if oid2 is not None:
-		user2 = getUserByOid(oid2)
-		if user2 is None:
-			return rp.Reply(rp.types.ERR_NO_USER_BY_ID)
-	elif username2 is not None:
-		user2 = getUserByName(username2)
-		if user2 is None:
-			return rp.Reply(rp.types.ERR_NO_USER)
-	else:
-		raise ValueError()
+def uncooldown_user(user, username):
+	if isTooSensitive(username, user):
+		return rp.Reply(rp.types.ERR_ADMIN_SEARCH)
+
+	user2 = getUserByName(username, user)
+	if user2 == -1:
+		return rp.Reply(rp.types.ERR_COLLISION)
+	elif user2 is None:
+		return rp.Reply(rp.types.ERR_NO_USER)
 
 	if not user2.isInCooldown():
 		return rp.Reply(rp.types.ERR_NOT_IN_COOLDOWN)
@@ -489,19 +524,26 @@ def uncooldown_user(user, oid2=None, username2=None):
 @requireUser
 @requireRank(RANKS.admin)
 def show_whitelist(c_user):
+	# if not whitelist:
+	# 	return rp.Reply(rp.types.WHITELIST_NOT_ON)
 	buttons = []
-	for user in db.iterateUsers():
+	for user in db.iterateUsers(order_by="joined",order_desc=True):
 		try:
 			db.getWhitelistedUser(id=user.id)
 		except KeyError as e:
 			if not user.isBlacklisted():
-				tag = "@"+user.username if user.username else user.realname
+				# tag = "@"+user.username if user.username else user.realname
+				tag = user.getObfuscatedId()
+				if user.tripcode:
+					tag = user.tripname+user.triphash
+				tag += " (" + (user.joined-timedelta(hours=1)).strftime("%b %d %H:%M")+"Z)"
 				buttons.append([{
 					"text": tag,
 					"callback_data": "whitelist_"+str(user.id)
 				}])
 	if not len(buttons):
 		return rp.Reply(rp.types.ERR_NO_WAITLIST)
+	#FIX: Add button to blacklist?
 	buttons.append([{
 		"text": "Cancel",
 		"callback_data": "whitelist_cancel"
@@ -510,37 +552,42 @@ def show_whitelist(c_user):
 
 @requireUser
 @requireRank(RANKS.admin)
-def whitelist_user(c_user, username, msid):
-	original_name = username
-	username = username.strip().lower()
-
-	user_id = None
-	if username.startswith("@"):
-		for user in db.iterateUsers():
-			if "@"+user.username.lower() == username:
-				user_id = user.id
-	elif re.search("^[0-9+]{5,}$",username) is not None:
-		user_id = username
-
-	if user_id is not None:
-		try:
-			db.getWhitelistedUser(user_id)
-			delete_message(c_user, msid, False)
-			return rp.Reply(rp.types.ERR_ALREADY_WHITELISTED)
-		except KeyError as e:
-			db.addWhitelistedUser(user_id)
-	else:
-		delete_message(c_user, msid, False)
+def whitelist_user(c_user, username):
+	user2 = getUserByName(username)
+	if user2 == -1:
+		return rp.Reply(rp.types.ERR_COLLISION)
+	elif user2 is None:
 		return rp.Reply(rp.types.ERR_NO_USER)
-	logging.info("%s was whitelisted by %s", original_name, c_user)
-	#FIX: this can go away after the buttons work.
-	delete_message(c_user, msid, False)
-	return rp.Reply(rp.types.WHITELIST_SUCCESS)
+
+	try:
+		db.getWhitelistedUser(user2.id)
+		return rp.Reply(rp.types.ERR_ALREADY_WHITELISTED)
+	except KeyError as e:
+		db.addWhitelistedUser(user2.id)
+	logging.info("%s was whitelisted by %s", user2, c_user)
+	return rp.Reply(rp.types.SUCCESS)
+
+@requireUser
+@requireRank(RANKS.admin)
+def unwhitelist_user(c_user, username):
+	user2 = getUserByName(username)
+	if user2 == -1:
+		return rp.Reply(rp.types.ERR_COLLISION)
+	elif user2 is None:
+		return rp.Reply(rp.types.ERR_NO_USER)
+
+	try:
+		db.addWhitelistedUser(user2.id, toWhitelist=False)
+	except KeyError as e:
+		return rp.Reply(rp.types.ERR_NOTHING_TO_DO)
+	logging.info("%s was unwhitelisted by %s", user2, c_user)
+	return rp.Reply(rp.types.SUCCESS)
 
 @requireUser
 @requireRank(RANKS.admin)
 def whitelist_reply(call):
   logging.info(call)
+	#FIX: Return message
 
 @requireUser
 @requireRank(RANKS.admin)
@@ -565,28 +612,89 @@ def blacklist_user(user, msid, reason):
 @requireUser
 @requireRank(RANKS.admin)
 def unblacklist_user(c_user, username):
-	original_name = username
-	username = username.strip().lower()
-
-	#FIX: should probably make a function to get a userID from a given name/id
-	user_id = None
-	if username.startswith("@"):
-		for user in db.iterateUsers():
-			if "@"+user.username.lower() == username.lower():
-				user_id = user.id
-	elif re.search("^[0-9+]{5,}$",username) is not None:
-		user_id = username
-
-	if user_id is None:
+	user2 = getUserByName(username)
+	if user2 == -1:
+		return rp.Reply(rp.types.ERR_COLLISION)
+	elif user2 is None:
 		return rp.Reply(rp.types.ERR_NO_USER)
 
-	with db.modifyUser(id=user_id) as user2:
+	with db.modifyUser(id=user2.id) as user2:
 		if user2.rank != RANKS.banned:
 			return rp.Reply(rp.types.ERR_NOT_BLACKLISTED)
 		user2.setBlacklisted(toBlacklist=False)
 		#FIX: Anything about warnings and stuff? Might need to reduce if too high
 	logging.info("%s was unblacklisted by %s", user2, c_user)
 	return rp.Reply(rp.types.SUCCESS)
+
+@requireUser
+@requireRank(RANKS.admin)
+def show_unblacklist(c_user):
+	buttons = []
+	for user in db.iterateUsers(order_by="left",order_desc=True):
+		if user.isBlacklisted():
+			# tag = "@"+user.username if user.username else user.realname
+			tag = user.getObfuscatedId()
+			if user.tripcode:
+				tag = user.tripname+user.triphash
+			buttons.append([{
+				"text": tag,
+				"callback_data": "unblacklist_"+str(user.id)
+			}])
+	if not len(buttons):
+		return rp.Reply(rp.types.ERR_NO_UNBLACKLIST)
+	buttons.append([{
+		"text": "Cancel",
+		"callback_data": "unblacklist_cancel"
+	}])
+	return rp.Reply(rp.types.UNBLACKLIST_INFO, buttons=buttons)
+
+#FIX: add reply_to demote
+@requireUser
+@requireRank(RANKS.admin)
+def show_demotelist(c_user):
+	buttons = []
+	for user in db.iterateUsers():
+		# if user.rank > RANKS.user and user.id != c_user.id:
+		if user.rank == RANKS.mod and user.id != c_user.id:
+			tag = user.getObfuscatedId()
+			if user.tripcode:
+				tag = user.tripname+user.triphash
+			if user.rank > RANKS.mod:
+				tag += "🌟"
+			buttons.append([{
+				"text": tag,
+				"callback_data": "demote_"+str(user.id)
+			}])
+	if not len(buttons):
+		return rp.Reply(rp.types.ERR_NO_LIST)
+	buttons.append([{
+		"text": "Cancel",
+		"callback_data": "demote_cancel"
+	}])
+	return rp.Reply(rp.types.DEMOTELIST_INFO, buttons=buttons)
+
+@requireUser
+@requireRank(RANKS.mod)
+def demote_user(c_user, username):
+	if isTooSensitive(username, c_user):
+		return rp.Reply(rp.types.ERR_ADMIN_SEARCH)
+
+	user2 = getUserByName(username)
+	if user2 == -1:
+		return rp.Reply(rp.types.ERR_COLLISION)
+	elif user2 is None:
+		return rp.Reply(rp.types.ERR_NO_USER)
+
+	if user2.id == c_user.id:
+		return rp.Reply(rp.types.CUSTOM, text="<i>You cannot demote yourself.</i>")
+
+	with db.modifyUser(id=user2.id) as user2:
+		if user2.rank > RANKS.mod:
+			return rp.Reply(rp.types.CUSTOM, text="<i>You can't demote someone of higher rank.</i>")
+		user2.rank = RANKS.user
+	logging.info("%s was demoted by %s", user2, c_user)
+	_push_system_message(rp.Reply(rp.types.DEMOTED), who=user2)
+	return rp.Reply(rp.types.DEMOTED)
 
 @requireUser
 def give_karma(user, msid):
@@ -607,17 +715,29 @@ def give_karma(user, msid):
 	return rp.Reply(rp.types.KARMA_THANK_YOU)
 
 @requireUser
-def expose_to_user(user, msid, realname):
-	cm = ch.getMessage(msid)
-	if cm is None or cm.user_id is None:
-		return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
-	user2 = db.getUser(id=cm.user_id)
-	tripname, tripcode = genTripcode(user2.tripcode, user2.salt)
+def expose_to_user(c_user, msid, username, realname):
+	if not enable_expose:
+		return rp.Reply(rp.types.ERR_COMMAND_DISABLED)
+
+	user2 = None
+	if not msid and username == "yes":
+		return rp.Reply(rp.types.ERR_EXPOSE_CONFIRM)
+	elif msid and username == "yes":
+		cm = ch.getMessage(msid)
+		if cm is None or cm.user_id is None:
+			return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
+		user2 = db.getUser(id=cm.user_id)
+	elif not msid:
+		if isTooSensitive(username, c_user):
+			return rp.Reply(rp.types.ERR_ADMIN_SEARCH)
+		user2 = getUserByName(username)
+		if user2 == -1:
+			return rp.Reply(rp.types.ERR_COLLISION)
+		elif user2 is None:
+			return rp.Reply(rp.types.ERR_NO_USER)
+
 	_push_system_message(rp.Reply(rp.types.EXPOSE_TO,realname=str(realname)), who=user2)
-	return rp.Reply(rp.types.EXPOSED, name=tripname+tripcode)
-
-
-
+	return rp.Reply(rp.types.EXPOSED, name=user2.tripname+user2.triphash)
 
 @requireUser
 def prepare_user_message(user: User, msg_score, *, is_media=False, expose=False, tripcode=False):

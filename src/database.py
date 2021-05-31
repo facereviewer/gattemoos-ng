@@ -19,7 +19,7 @@ class SystemConfig():
 USER_PROPS = (
 	"id", "username", "realname", "rank", "joined", "left", "lastActive",
 	"cooldownUntil", "blacklistReason", "warnings", "warnExpiry", "forwardWarned", "karma",
-	"hideKarma", "debugEnabled", "tripcode", "salt", "tripcodeToggle"
+	"hideKarma", "debugEnabled", "tripcode", "tripname", "triphash", "salt", "tripcodeToggle"
 )
 
 class User():
@@ -41,6 +41,8 @@ class User():
 		self.hideKarma = None # bool
 		self.debugEnabled = None # bool
 		self.tripcode = None # str?
+		self.tripname = None # str?
+		self.triphash = None # str?
 		self.salt = None # str?
 		self.tripcodeToggle = None # bool
 	def __eq__(self, other):
@@ -54,11 +56,11 @@ class User():
 		self.joined = datetime.now()
 		self.lastActive = self.joined
 		self.warnings = 0
-		self.forwardWarned = 0
+		self.forwardWarned = False #FIX: not yet implemented
 		self.karma = 0
 		self.hideKarma = True
 		self.debugEnabled = False
-		self.salt = str(randint(1000,9999))
+		self.salt = str(randint(1000,9999))#currently unused
 		self.tripcodeToggle = True
 	def isJoined(self):
 		return self.left is None
@@ -150,9 +152,9 @@ class Database():
 		raise NotImplementedError()
 	def setSystemConfig(self, config):
 		raise NotImplementedError()
-	def iterateUsers(self):
+	def iterateUsers(self, order_by=None, order_desc=False):
 		with self.lock:
-			l = list(self.getUser(id=id) for id in self.iterateUserIds())
+			l = list(self.getUser(id=id) for id in self.iterateUserIds(order_by, order_desc))
 		yield from l
 	def iterateAdmins(self):
 		with self.lock:
@@ -205,7 +207,7 @@ class JSONDatabase(Database):
 	def _userToDict(user):
 		props = ["id", "username", "realname", "rank", "joined", "left",
 			"lastActive", "cooldownUntil", "blacklistReason", "warnings",
-			"warnExpiry", "forwardWarned", "karma", "hideKarma", "debugEnabled", "tripcode","salt", "tripcodeToggle"]
+			"warnExpiry", "forwardWarned", "karma", "hideKarma", "debugEnabled", "tripcode","tripname","triphash","salt", "tripcodeToggle"]
 		d = {}
 		for prop in props:
 			value = getattr(user, prop)
@@ -217,8 +219,8 @@ class JSONDatabase(Database):
 	def _userFromDict(d):
 		if d is None: return None
 		props = ["id", "username", "realname", "rank", "blacklistReason",
-			"warnings", "forwardWarned", "karma", "hideKarma", "debugEnabled", "tripcodeToggle"]
-		props_d = [("tripcode", None)]
+			"warnings", "karma", "hideKarma", "debugEnabled", "tripcodeToggle"]
+		props_d = [("tripcode", None),("tripname", None),("triphash", None)]
 		dateprops = ["joined", "left", "lastActive", "cooldownUntil", "warnExpiry"]
 		user = User()
 		for prop in props:
@@ -346,6 +348,8 @@ CREATE TABLE IF NOT EXISTS `users` (
 	`hideKarma` TINYINT NOT NULL,
 	`debugEnabled` TINYINT NOT NULL,
 	`tripcode` TEXT,
+	`tripname` TEXT,
+	`triphash` TEXT,
 	`salt` TEXT,
 	`tripcodeToggle` TINYINT NOT NULL,
 	PRIMARY KEY (`id`)
@@ -354,6 +358,12 @@ CREATE TABLE IF NOT EXISTS `users` (
 			# migration
 			if not row_exists("users", "tripcode"):
 				self.db.execute("ALTER TABLE `users` ADD `tripcode` TEXT")
+			if not row_exists("users", "tripname"):
+				self.db.execute("ALTER TABLE `users` ADD `tripname` TEXT")
+			if not row_exists("users", "triphash"):
+				self.db.execute("ALTER TABLE `users` ADD `triphash` TEXT")
+			if not row_exists("users", "tripcodeToggle"):
+				self.db.execute("ALTER TABLE `users` ADD `tripcodeToggle` TINYINT")
 			if not row_exists("users", "forwardWarned"):
 				self.db.execute("ALTER TABLE `users` ADD `forwardWarned` TINYINT")
 	def getUser(self, id=None):
@@ -407,16 +417,26 @@ CREATE TABLE IF NOT EXISTS `users` (
 		if row is None:
 			raise KeyError()
 		return True
-	def iterateUserIds(self):
+	def iterateUserIds(self, order_by=None, order_desc=False):
 		sql = "SELECT `id` FROM users"
+		if order_by:
+			sql += " ORDER BY ?" + (" DESC" if order_desc else "")
 		with self.lock:
-			cur = self.db.execute(sql)
+			if order_by:
+				cur = self.db.execute(sql, (str(order_by), ))
+			else:
+				cur = self.db.execute(sql)
 			l = cur.fetchall()
 		yield from l
-	def iterateUsers(self):
+	def iterateUsers(self, order_by=None, order_desc=False):
 		sql = "SELECT * FROM users"
+		if order_by:
+			sql += " ORDER BY ?" + (" DESC" if order_desc else "")
 		with self.lock:
-			cur = self.db.execute(sql)
+			if order_by:
+				cur = self.db.execute(sql, (str(order_by), ))
+			else:
+				cur = self.db.execute(sql)
 			l = list(SQLiteDatabase._userFromRow(row) for row in cur)
 		yield from l
 	def iterateAdmins(self):

@@ -71,14 +71,14 @@ def init(config, _db, _ch):
 		types += ["document"]
 	types += ["animation", "audio", "photo", "sticker", "video", "video_note", "voice", "poll"]
 
-	# Default commands
+	# Unused commands
 	#cmds = [
-	#	"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "whitelist", "blacklist", "s", "sign", "tripcode", "t", "tsign", "tripcodetoggle"
+	#	"s", "sign", "t", "tsign"
 	#]
 	
 	# Trimmed command list
 	cmds = [
-		"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "warn", "delete", "remove", "uncooldown", "whitelist", "blacklist", "unblacklist", "exposeto", "tripcode", "tripcodetoggle"
+		"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "demote", "warn", "delete", "remove", "uncooldown", "whitelist", "blacklist", "unblacklist", "exposeto", "tripcode", "tripcodetoggle", "ban", "unban", "unwhitelist"
 	]
 	for c in cmds: # maps /<c> to the function cmd_<c>
 		c = c.lower()
@@ -127,30 +127,35 @@ def init(config, _db, _ch):
 	def callback_query(call):
 		c_user = db.getUser(id=call.from_user.id)
 		msid = call.message.id
-		if call.data == "whitelist_cancel":
-			#core._push_system_message(rp.Reply(rp.types.ERR_NO), who=c_user)
+
+		# This will change if there are ever non-admin buttons
+		if c_user.rank < RANKS.admin:
+			return
+
+		if call.data.find("_cancel") >= 0:
 			core.delete_message(c_user, msid, False)
 			try:
 				bot.answer_callback_query(call.id, "Cancelled", show_alert=False)
 			except Exception as e:
 				return
-		else: 
-			# FIX could find instead of looping.
-			# try:
-			# 	user = db.getUser(id=call.data[call.data.find("_")+1:])
-			# 	core.whitelist_user(c_user, str(user.id), msid)
-			# 	core._push_system_message(rp.Reply(rp.types.SUCCESS), who=c_user)
-			# except KeyError as e:
-			#		return some kind of error message?
-			# next time I have someone to whitelist I'll test it
-			for user in db.iterateUsers():
-				if call.data == "whitelist_"+str(user.id):
-					core.whitelist_user(c_user, str(user.id), msid)
-					core._push_system_message(rp.Reply(rp.types.SUCCESS), who=c_user)
-					try:
-						bot.answer_callback_query(call.id, "", show_alert=False)
-					except Exception as e:
-						return
+		else:
+			try:
+				user = db.getUser(id=call.data[call.data.find("_")+1:])
+				if call.data.startswith("whitelist_"):
+					core.whitelist_user(c_user, user.id)
+				if call.data.startswith("unblacklist_"):
+					core.unblacklist_user(c_user, user.id)
+				if call.data.startswith("demote_"):
+					core.demote_user(c_user, user.id)
+				core._push_system_message(rp.Reply(rp.types.SUCCESS), who=c_user)
+				core.delete_message(c_user, msid, False)
+			except KeyError as e:
+				logging.error("User not found from "+call.data[:call.data.find("_")]+" button.")
+				return #some kind of error message? no_user_found?
+			try:
+				bot.answer_callback_query(call.id, "", show_alert=False)
+			except Exception as e:
+				return
 
 	core._push_system_message(rp.Reply(rp.types.PROGRAM_START, version=VERSION))
 
@@ -214,6 +219,14 @@ def takesArgument(optional=False):
 			return func(ev, arg)
 		return wrap
 	return f
+
+def removeSensitiveInfo(ev, arg):
+	c_user = UserContainer(ev.from_user)
+	# is username and not tripcode, or is ID, delete
+	if (arg.startswith("@") and arg.find("!") < 0 or re.search("^[0-9+]{5,}$",arg) is not None):
+		core.delete_message(c_user, ev.message_id, False)
+		return "##"+str(arg)
+	return arg
 
 def wrap_core(func, reply_to=False):
 	def f(ev):
@@ -367,12 +380,11 @@ def formatter_expose_message(user: core.User, fmt: FormattedMessageBuilder):
 
 # Add tripcode message formatting for User `user` to `fmt`
 def formatter_tripcoded_message(user: core.User, fmt: FormattedMessageBuilder):
-	tripname, tripcode = genTripcode(user.tripcode, user.salt)
 	# due to how prepend() works the string is built right-to-left
 	fmt.prepend("</code>:\n", True)
-	fmt.prepend(tripcode)
-	fmt.prepend("</b> <code>", True)
-	fmt.prepend(tripname)
+	fmt.prepend(user.triphash)
+	fmt.prepend("</b><code>", True)
+	fmt.prepend(user.tripname)
 	fmt.prepend("<b>", True)
 
 def formatter_edited_message(fmt: FormattedMessageBuilder):
@@ -675,10 +687,10 @@ cmd_tripcodetoggle = wrap_core(core.toggle_tripcode)
 def cmd_tripcode(ev, arg):
 	c_user = UserContainer(ev.from_user)
 
-	if arg == "":
-		send_answer(ev, core.get_tripcode(c_user))
-	else:
+	if arg.strip():
 		send_answer(ev, core.set_tripcode(c_user, arg))
+	else:
+		send_answer(ev, core.get_tripcode(c_user))
 
 
 cmd_modhelp = wrap_core(core.modhelp)
@@ -702,17 +714,39 @@ def cmd_adminsay(ev, arg):
 	arg = escape_html(arg)
 	return send_answer(ev, core.send_admin_message(c_user, arg), True)
 
-@takesArgument()
+@takesArgument(optional=True)
 def cmd_mod(ev, arg):
 	c_user = UserContainer(ev.from_user)
-	arg = arg.lstrip("@")
-	send_answer(ev, core.promote_user(c_user, arg, RANKS.mod), True)
+	if arg.strip():
+		arg = removeSensitiveInfo(ev, arg)
+		return send_answer(ev, core.promote_user(c_user, arg, RANKS.mod))
+
+	if ev.reply_to_message is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+
+	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+	if reply_msid is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+	cm = ch.getMessage(reply_msid)
+
+	return send_answer(ev, core.promote_user(c_user, cm.user_id, RANKS.mod), True)
 
 @takesArgument()
 def cmd_admin(ev, arg):
 	c_user = UserContainer(ev.from_user)
-	arg = arg.lstrip("@")
-	send_answer(ev, core.promote_user(c_user, arg, RANKS.admin), True)
+	if arg.strip():
+		arg = removeSensitiveInfo(ev, arg)
+		return send_answer(ev, core.promote_user(c_user, arg, RANKS.admin))
+
+	if ev.reply_to_message is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+
+	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+	if reply_msid is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+	cm = ch.getMessage(reply_msid)
+
+	return send_answer(ev, core.promote_user(c_user, cm.user_id, RANKS.admin), True)
 
 def cmd_warn(ev, delete=False, only_delete=False):
 	c_user = UserContainer(ev.from_user)
@@ -736,23 +770,35 @@ cmd_remove = lambda ev: cmd_warn(ev, only_delete=True)
 @takesArgument()
 def cmd_uncooldown(ev, arg):
 	c_user = UserContainer(ev.from_user)
-
-	oid, username = None, None
-	if len(arg) < 5:
-		oid = arg # usernames can't be this short -> it's an id
-	else:
-		username = arg
-
-	send_answer(ev, core.uncooldown_user(c_user, oid, username), True)
+	arg = removeSensitiveInfo(ev, arg)
+	return send_answer(ev, core.uncooldown_user(c_user, arg), True)
 
 @takesArgument(optional=True)
 def cmd_whitelist(ev, arg):
 	c_user = UserContainer(ev.from_user)
-	if arg.strip() == "":
+	if not arg.strip():
 		return send_answer(ev, core.show_whitelist(c_user))
-		
-	return send_answer(ev, core.whitelist_user(c_user, arg, ev.message_id))
+	arg = removeSensitiveInfo(ev, arg)
+	return send_answer(ev, core.whitelist_user(c_user, arg))
 
+@takesArgument(optional=True)
+def cmd_unwhitelist(ev, arg):
+	c_user = UserContainer(ev.from_user)
+	if arg.strip():
+		arg = removeSensitiveInfo(ev, arg)
+		return send_answer(ev, core.unwhitelist_user(c_user, arg))
+
+	if ev.reply_to_message is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+
+	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+	if reply_msid is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+	cm = ch.getMessage(reply_msid)
+
+	return send_answer(ev, core.unwhitelist_user(c_user, cm.user_id), True)
+
+#FIX: This is probably more secure
 # @bot.callback_query_handler(func=lambda call: True)
 # def  test_callback(call):
 # 	core.whitelist_reply(call)
@@ -768,11 +814,28 @@ def cmd_blacklist(ev, arg):
 		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
 	return send_answer(ev, core.blacklist_user(c_user, reply_msid, arg), True)
 
-@takesArgument()
+@takesArgument(optional=True)
 def cmd_unblacklist(ev, arg):
 	c_user = UserContainer(ev.from_user)
-	core.delete_message(c_user, ev.message_id, False)
+	if not arg.strip():
+		return send_answer(ev, core.show_unblacklist(c_user))
+	arg = removeSensitiveInfo(ev, arg)
 	return send_answer(ev, core.unblacklist_user(c_user, arg))
+
+@takesArgument(optional=True)
+def cmd_demote(ev, arg):
+	c_user = UserContainer(ev.from_user)
+	if arg.strip():
+		arg = removeSensitiveInfo(ev, arg)
+		return send_answer(ev, core.demote_user(c_user, arg))
+	if ev.reply_to_message is None:
+		return send_answer(ev, core.show_demotelist(c_user))
+
+	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+	if reply_msid is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+
+	return send_answer(ev, core.demote_user(c_user, arg), True)
 
 def plusone(ev):
 	c_user = UserContainer(ev.from_user)
@@ -883,25 +946,22 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 
 @takesArgument(optional=True)
 def cmd_exposeto(ev, arg):
-	if arg is None or arg != "yes":
+	c_user = UserContainer(ev.from_user)
+	if not arg.strip():
 		return send_answer(ev, rp.Reply(rp.types.ERR_EXPOSE_CONFIRM), True)
-		
+
+	arg = removeSensitiveInfo(ev, arg)
+	user = db.getUser(id=ev.from_user.id)
+	#FIX: this can probably just be done in the replies.py, with the data passed into that.
+	fmt = user.tripname+user.triphash+" has revealed theirself to you privately as <a href=\"tg://user?id="+str(user.id)+"\">" + user.getFormattedName() + "</a>!"
 	if ev.reply_to_message is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+		return send_answer(ev, core.expose_to_user(user,None,arg,fmt))	
 
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 	if reply_msid is None:
 		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
 
-	user = db.getUser(id=ev.from_user.id)
-	fmt = user.tripcode[:user.tripcode.find("#")]+" has revealed theirself to you privately as <a href=\"tg://user?id="+str(user.id)+"\">" + user.getFormattedName() + "</a>!"
-	#FIX: this can probably just be done in the replies.py, with the data passed into that.
-
-	return send_answer(ev, core.expose_to_user(user, reply_msid,fmt), True)	
-	#return send_answer(ev, rp.Reply(rp.types.ERR_NO), True)
-
-	#ev.text = arg
-	#relay_inner(ev, expose=True)
+	return send_answer(ev, core.expose_to_user(user,reply_msid,arg,fmt), True)	
 
 #cmd_s = cmd_sign # alias
 
@@ -911,3 +971,6 @@ def cmd_tsign(ev, arg):
 	relay_inner(ev, tripcode=True)
 
 cmd_t = cmd_tsign # alias
+
+cmd_ban = cmd_blacklist # alias
+cmd_unban = cmd_unblacklist # alias
