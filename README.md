@@ -32,6 +32,7 @@ tripcode - Show or set a tripcode for your messages
 tripcodetoggle - Toggle tripcode to be on by default on messages
 ```
 (By default, tripcodetoggle is turned off in config.)
+
 (There are other commands, but they're part of /modhelp and /adminhelp)
 
 ### Trimmed Command List for ease of use
@@ -48,7 +49,7 @@ tripcode - Show or set a tripcode for your messages
 1. Get a server somewhere.
 2. Brush up on terminals! There are SSH programs you can use on Windows that might be graphical. You can use Windows Subsystem for Linux (WSL) to run ubuntu or such from a cmd window. Otherwise you'll know all this stuff already.
 3. SSH into root at your server's address.
-4. Make a new user account to run the bots, give them sudoing rights (`usermod -aG sudo __whomever__`)
+4. Make a new user account to run the bots, give them sudoing rights (`usermod -aG sudo ***whomever***`)
 5. You can use sftp to transfer files. On Windows, just get WinSCP and set up a connection to that new account at the server's IP address. Drag all the files across.
 6. SSH into the new user account. You might need to `sudo apt-get update` and then `sudo apt-get install python3-pip`. Use pip3 to install requirements.txt.
 7. Copy default configuration from `config.yaml.example` to `bot1/config.yaml`. Edit `bot1/config.yaml` and paste in your bot key from BotFather.
@@ -78,25 +79,17 @@ You should harden your server by doing a few other things:
 
 ## FAQ
 
-1. **How do I ban a user from my bot?**
+1. **How do I ban/unban/whitelist/unwhitelist/etc a user?**
 
-You'll need to reply to one of their messages with `/ban reason` where the 'reason' is a message sent to the user and stored in the database. (If they've never said anything, you'll have to use the server script.)
+Generally speaking, you should reply to a user's message to perform an action on them. Reply to one of their messages with `/ban just because` or `/info` or `/warn`. Check out the `/modhelp` and `/adminhelp` commands.
 
-2. **How do I unban a blacklisted user from my bot?**
+Sometimes you can't access one of their messages. To whitelist a new user, unban someone who has no recent messages, or stuff like that, you can just use commands like `/whitelist` or `/unban` or `/demote` to show an anonymized list.
 
-You can use `/unban` and choose the user from the buttons.
+You can paste in their tripcode or obfuscated ID. For example, `/mod someone!d30I83hFJ2` will find that person and make them a moderator. Admins can also search by username or id, but be careful never to accidentally send that to everyone by forgetting the `/` at the start of your command. That sensitive data will be deleted automatically from your chat window.
 
-You can also use `/unban 12345678` with those numbers replaced by their username or ID, but be careful you don't accidentally send that info out to everyone.
+(Banning by username doesn't currently work. If they've never said anything, you'll have to use the server script.)
 
-3. **How do I whitelist a user for my bot?**
-
-Just use `/whitelist` after they've tried joining, and choose the user from the buttons. You can also do it before they try to join by using `/whitelist 12345678` with those numbers replaced by their user ID. Be careful not to accidentally send their ID to everyone.
-
-4. **How do I demote someone I promoted to mod/admin at some point?**
-
-Just use `/demote` and choose the user from the buttons. You can also try `/demote name` where 'name' is their tripcode or obfuscated ID. Try using /info on one of their messages to see their oid.
-
-5. **What is the suggested setup to run multiple bots?**
+2. **What is the suggested setup to run multiple bots?**
 
 The administrative scripts support a structure like the following where each bot has its' own subdirectory:
 

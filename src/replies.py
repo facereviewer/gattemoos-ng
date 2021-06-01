@@ -29,6 +29,7 @@ class Reply():
 types = NumericEnum([
 	"CUSTOM",
 	"SUCCESS",
+	"SENSITIVE",
 	"BOOLEAN_CONFIG",
 
 	"CHAT_JOIN",
@@ -52,6 +53,7 @@ types = NumericEnum([
 	"UNBLACKLIST_INFO",
 
 	"ERR_NO",
+	"ERR_NO_EDITING",
 	"ERR_COMMAND_DISABLED",
 	"ERR_ADMIN_SEARCH",
 	"ERR_NO_REPLY",
@@ -108,6 +110,7 @@ def smiley(n):
 format_strs = {
 	types.CUSTOM: "{text}",
 	types.SUCCESS: "✅",
+	types.SENSITIVE: "<em>(sensitive info deleted)</em>",
 	types.BOOLEAN_CONFIG: lambda enabled, **_:
 		"<b>{description!x}</b>: " + (enabled and "enabled" or "disabled"),
 
@@ -130,7 +133,7 @@ format_strs = {
 		em( "You've just been given sweet karma! (check /info to see your karma"+
 			" or /toggleKarma to turn these notifications off)" ),
 	types.TRIPCODE_INFO: lambda tripcode, **_:
-		"<b>tripcode</b>: " + ("<code>{tripcode!x}</code>" if tripcode is not None else "unset"),
+		"<b>tripcode</b>:\n " + ("<code>{tripcode!x}</code>" if tripcode is not None else "unset"),
 	types.TRIPCODE_SET: em("Tripcode set. It will appear as:\n") + "<b>{tripname!x}</b> <code>{triphash!x}</code>",
 	types.EXPOSE_TO: "{realname}",
 	types.EXPOSED: em("Your real handle has been exposed to {name!x}."),
@@ -139,10 +142,11 @@ format_strs = {
 	types.UNBLACKLIST_INFO: em("Please select a banned user from the list below to remove from the blacklist:"),
 
 	types.ERR_NO: em("Actually no"),
+	types.ERR_NO_EDITING: em("Edits will not be seen by other members."),
 	types.ERR_COMMAND_DISABLED: em("This command has been disabled."),
 	types.ERR_ADMIN_SEARCH: em("Only an admin can search by username!"),
 	types.ERR_NO_REPLY: em("You need to reply to a message to use this command."),
-	types.ERR_NOT_IN_CACHE: em("Message not found in cache... (24h passed or bot was restarted)"),
+	types.ERR_NOT_IN_CACHE: em("Message not found in cache... (36h passed or bot was restarted)"),
 	types.ERR_NO_USER: em("No user found by that name!"),
 	types.ERR_NO_USER_BY_ID: em("No user found by that id! Note that all ids rotate every 24 hours."),
 	types.ERR_COLLISION: em("More than one user currently has the same name. Try the command again while replying to their message or use a different kind of ID."),

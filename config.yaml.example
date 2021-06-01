@@ -1,34 +1,31 @@
 # Telegram bot token
 bot_token: "BOT_TOKEN_HERE"
 
-# supported db types: json, sqlite
-# both take a single argument which is the database path
+# Supported db types: json, sqlite
+# Both take a single argument which is the database path
 database: [sqlite, "bot1/secretlounge.db"]
 #WARNING: Changes have not been tested with JSON.
 
-# relay contacts
-allow_contacts: false
-# relay arbitrary documents/files (GIFs always work)
-allow_documents: true
+# Relay media
+allow_contacts: false # contacts
+allow_documents: true # arbitrary files (other than GIFs)
 
-# allow mods to remove message without issuing a cooldown
-allow_remove_command: true
+# Allow commands (false if removed or commented)
+allow_remove_command: true # /remove messages without a cooldown
+enable_expose: true # /expose true identity to another member
+#tripcode_toggle: true # /tripcodetoggle sets anonymous mode
+whitelist: true # /whitelist users or they cannot join
 
-# enable exposing oneself's real identity to another chat member
-enable_expose: true
+# Allow editing of recent messages
+allow_edits: true
 
-# limit usage of /tripcode to once in every interval (hours)
-# defaults to 1 if not specified, set to 0 to disable
-tripcode_limit_interval: 24
-# Allows toggling tripcodes off for full anonymity (default: no toggling)
-#tripcode_toggle: true
+# Limit usage of /tripcode to once in every X hours
+tripcode_limit_interval: 1
 
-# enable checking the whitelist. If enabled, a user will be disallowed from joining unless they've been added to the whitelist.
-whitelist: true
-# point of contact shown to blacklisted users (optional)
+# point of contact shown to blacklisted users
 #blacklist_contact: http://t.me/invite/something
 
-# duration (hours) during which new users can't send media or forwards (optional)
+# Stop new users from sending media or forwards for X hours
 #media_limit_period: 3
 
 # map of bots that users can refer to in their messages (optional)

@@ -8,7 +8,7 @@ import traceback
 
 import src.core as core
 import src.replies as rp
-from src.util import MutablePriorityQueue, genTripcode
+from src.util import MutablePriorityQueue
 from src.globals import *
 
 # module constants
@@ -34,9 +34,10 @@ registered_commands = {}
 allow_documents = None
 linked_network: dict = None
 tripcode_toggle = None
+allow_edits = None
 
 def init(config, _db, _ch):
-	global bot, db, ch, message_queue, allow_documents, linked_network, tripcode_toggle
+	global bot, db, ch, message_queue, allow_documents, linked_network, tripcode_toggle, allow_edits
 	if config["bot_token"] == "":
 		logging.error("No telegram token specified.")
 		exit(1)
@@ -46,20 +47,15 @@ def init(config, _db, _ch):
 
 	bot = telebot.TeleBot(config["bot_token"], threaded=False)
 
-	# FIX: There might be a way to let the bot delete messages.
-	# permissions = {'can_send_messages': True, 'can_send_media_messages': True, 'can_send_polls': True, 'can_send_other_messages': True, 'can_add_web_page_previews': True, 'can_change_info': True, 'can_invite_users': True, 'can_pin_messages': True}
-	# new_permissions = ChatPermissions(**permissions)
-	# bot.set_chat_permissions(chat_id=ch.chat_id, permissions=new_permissions)
-
-	
-	db = _db
-	ch = _ch
+	db = _db # SQLiteDatabase
+	ch = _ch # Cache
 	message_queue = MutablePriorityQueue()
 
 	allow_contacts = config["allow_contacts"]
 	allow_documents = config["allow_documents"]
 	linked_network = config.get("linked_network")
 	tripcode_toggle = config.get("tripcode_toggle",False)
+	allow_edits = config.get("allow_edits", False)
 	if linked_network is not None and not isinstance(linked_network, dict):
 		logging.error("Wrong type for 'linked_network'")
 		exit(1)
@@ -85,41 +81,7 @@ def init(config, _db, _ch):
 		registered_commands[c] = globals()["cmd_" + c]
 	set_handler(relay, content_types=types)
 
-
-	@bot.edited_message_handler(func=lambda msg: True)
-	def callback_query(ev):
-		if ev.content_type=="text":
-			c_user = db.getUser(id=ev.from_user.id)
-
-			#Just need to use the right user_id, I think, and it'll come out with the correct message id.
-			cache_msid = ch.lookupMapping(ev.from_user.id, data=ev.message_id)
-			if cache_msid is None:
-				# FIX: messages should be more like the rest, with ev
-				core._push_system_message(rp.Reply(rp.types.ERR_NOT_IN_CACHE),who=c_user)
-				return
-
-			fmt = FormattedMessageBuilder(None, ev.caption, ev.text)
-			formatter_replace_links(ev, fmt)
-			formatter_network_links(fmt)
-			# FIX: can store whether a tripcode was used
-			# if tripcode or c_user.tripcodeToggle:
-			if not tripcode_toggle or c_user.tripcodeToggle:
-				if c_user.tripcode is None:
-					core._push_system_message(rp.Reply(rp.types.ERR_NEED_TRIPCODE), who=c_user)
-
-				formatter_tripcoded_message(c_user, fmt)
-			formatter_edited_message(fmt)
-			fmt = fmt.build()
-
-			for user in db.iterateUsers():
-				if user.id == ev.chat.id:
-					continue
-				chat_msid = ch.lookupMapping(user.id, msid=cache_msid)
-				try:
-					bot.edit_message_text(fmt.content, user.id, chat_msid, parse_mode="HTML")
-				except Exception as e:
-					logging.error("Error editing message. "+str(e))
-			
+	start_edit_listener()
 
 
 	
@@ -195,6 +157,45 @@ def register_tasks(sched):
 			logging.warning("Failed to deliver %d messages before they expired from cache.", n)
 	sched.register(task, hours=6) # (1/4) * cache duration
 
+def start_edit_listener():
+	@bot.edited_message_handler(func=lambda msg: True)
+	def callback_query(ev):
+		c_user = db.getUser(id=ev.from_user.id)
+
+		if not allow_edits:
+			return core._push_system_message(rp.Reply(rp.types.ERR_NO_EDITING),who=c_user)
+
+		if ev.content_type=="text":
+			#Just need to use the right user_id, I think, and it'll come out with the correct message id.
+			cache_msid = ch.lookupMapping(ev.from_user.id, data=ev.message_id)
+			if cache_msid is None:
+				# FIX: messages should be more like the rest, with ev
+				core._push_system_message(rp.Reply(rp.types.ERR_NOT_IN_CACHE),who=c_user)
+				return
+
+			fmt = FormattedMessageBuilder(None, ev.caption, ev.text)
+			formatter_replace_links(ev, fmt)
+			formatter_network_links(fmt)
+			# FIX: can store whether a tripcode was used
+			# if tripcode or c_user.tripcodeToggle:
+			if not tripcode_toggle or c_user.tripcodeToggle:
+				if c_user.tripcode is None:
+					core._push_system_message(rp.Reply(rp.types.ERR_NEED_TRIPCODE), who=c_user)
+
+				formatter_tripcoded_message(c_user, fmt)
+			formatter_edited_message(fmt)
+			fmt = fmt.build()
+
+			for user in db.iterateUsers():
+				if user.id == ev.chat.id:
+					continue
+				chat_msid = ch.lookupMapping(user.id, msid=cache_msid)
+				try:
+					bot.edit_message_text(fmt.content, user.id, chat_msid, parse_mode="HTML")
+				except Exception as e:
+					logging.error("Error editing message. "+str(e))
+
+
 # Wraps a telegram user in a consistent class (used by core.py)
 class UserContainer():
 	def __init__(self, u):
@@ -205,17 +206,19 @@ class UserContainer():
 			self.realname += " " + u.last_name
 
 def split_command(text):
+	text = text.strip()
 	if " " not in text:
 		return text[1:].lower(), ""
 	pos = text.find(" ")
 	return text[1:pos].lower(), text[pos+1:].strip()
 
-def takesArgument(optional=False):
+def takesArgument(optional=False, isUsername=False):
 	def f(func):
 		def wrap(ev):
 			_, arg = split_command(ev.text)
 			if arg == "" and not optional:
 				return
+			arg = removeSensitiveInfo(ev, arg)
 			return func(ev, arg)
 		return wrap
 	return f
@@ -225,8 +228,16 @@ def removeSensitiveInfo(ev, arg):
 	# is username and not tripcode, or is ID, delete
 	if (arg.startswith("@") and arg.find("!") < 0 or re.search("^[0-9+]{5,}$",arg) is not None):
 		core.delete_message(c_user, ev.message_id, False)
+		send_answer(ev, rp.Reply(rp.types.SENSITIVE))
 		return "##"+str(arg)
 	return arg
+
+def getUserIdFromReply(ev):
+	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+	if reply_msid is None:
+		send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+	cm = ch.getMessage(reply_msid)
+	return cm.user_id
 
 def wrap_core(func, reply_to=False):
 	def f(ev):
@@ -659,16 +670,21 @@ cmd_stop = wrap_core(core.user_leave)
 
 cmd_users = wrap_core(core.get_users)
 
-def cmd_info(ev):
+@takesArgument(optional=True, isUsername=True)
+def cmd_info(ev, arg):
 	c_user = UserContainer(ev.from_user)
+	if arg:
+		return send_answer(ev, core.get_info_mod(c_user, arg), True)
+
 	if ev.reply_to_message is None:
 		return send_answer(ev, core.get_info(c_user), True)
 
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+	cm = ch.getMessage(reply_msid)
 
 	if reply_msid is None:
 		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
-	return send_answer(ev, core.get_info_mod(c_user, reply_msid), True)
+	return send_answer(ev, core.get_info_mod(c_user, cm.user_id), True)
 
 @takesArgument(optional=True)
 def cmd_motd(ev, arg):
@@ -714,39 +730,29 @@ def cmd_adminsay(ev, arg):
 	arg = escape_html(arg)
 	return send_answer(ev, core.send_admin_message(c_user, arg), True)
 
-@takesArgument(optional=True)
+@takesArgument(optional=True, isUsername=True)
 def cmd_mod(ev, arg):
 	c_user = UserContainer(ev.from_user)
-	if arg.strip():
-		arg = removeSensitiveInfo(ev, arg)
+	if arg:
 		return send_answer(ev, core.promote_user(c_user, arg, RANKS.mod))
 
 	if ev.reply_to_message is None:
 		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+	user_id = getUserIdFromReply(ev)
 
-	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
-	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
-	cm = ch.getMessage(reply_msid)
+	return send_answer(ev, core.promote_user(c_user, user_id, RANKS.mod), True)
 
-	return send_answer(ev, core.promote_user(c_user, cm.user_id, RANKS.mod), True)
-
-@takesArgument()
+@takesArgument(optional=True, isUsername=True)
 def cmd_admin(ev, arg):
 	c_user = UserContainer(ev.from_user)
-	if arg.strip():
-		arg = removeSensitiveInfo(ev, arg)
+	if arg:
 		return send_answer(ev, core.promote_user(c_user, arg, RANKS.admin))
 
 	if ev.reply_to_message is None:
 		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+	user_id = getUserIdFromReply(ev)
 
-	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
-	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
-	cm = ch.getMessage(reply_msid)
-
-	return send_answer(ev, core.promote_user(c_user, cm.user_id, RANKS.admin), True)
+	return send_answer(ev, core.promote_user(c_user, user_id, RANKS.admin), True)
 
 def cmd_warn(ev, delete=False, only_delete=False):
 	c_user = UserContainer(ev.from_user)
@@ -767,36 +773,41 @@ cmd_delete = lambda ev: cmd_warn(ev, delete=True)
 
 cmd_remove = lambda ev: cmd_warn(ev, only_delete=True)
 
-@takesArgument()
+@takesArgument(optional=True, isUsername=True)
 def cmd_uncooldown(ev, arg):
 	c_user = UserContainer(ev.from_user)
-	arg = removeSensitiveInfo(ev, arg)
-	return send_answer(ev, core.uncooldown_user(c_user, arg), True)
+	if arg:
+		return send_answer(ev, core.uncooldown_user(c_user, arg), True)
 
-@takesArgument(optional=True)
+	if ev.reply_to_message is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+	user_id = getUserIdFromReply(ev)
+
+	return send_answer(ev, core.uncooldown_user(c_user, user_id), True)
+
+@takesArgument(optional=True, isUsername=True)
 def cmd_whitelist(ev, arg):
 	c_user = UserContainer(ev.from_user)
-	if not arg.strip():
-		return send_answer(ev, core.show_whitelist(c_user))
-	arg = removeSensitiveInfo(ev, arg)
-	return send_answer(ev, core.whitelist_user(c_user, arg))
+	if arg:
+		return send_answer(ev, core.whitelist_user(c_user, arg))
 
-@takesArgument(optional=True)
+	if ev.reply_to_message is None:
+		return send_answer(ev, core.show_whitelist(c_user))
+	user_id = getUserIdFromReply(ev)
+
+	return send_answer(ev, core.whitelist_user(c_user, user_id), True)
+
+@takesArgument(optional=True, isUsername=True)
 def cmd_unwhitelist(ev, arg):
 	c_user = UserContainer(ev.from_user)
-	if arg.strip():
-		arg = removeSensitiveInfo(ev, arg)
+	if arg:
 		return send_answer(ev, core.unwhitelist_user(c_user, arg))
 
 	if ev.reply_to_message is None:
 		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+	user_id = getUserIdFromReply(ev)
 
-	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
-	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
-	cm = ch.getMessage(reply_msid)
-
-	return send_answer(ev, core.unwhitelist_user(c_user, cm.user_id), True)
+	return send_answer(ev, core.unwhitelist_user(c_user, user_id), True)
 
 #FIX: This is probably more secure
 # @bot.callback_query_handler(func=lambda call: True)
@@ -806,36 +817,48 @@ def cmd_unwhitelist(ev, arg):
 @takesArgument(optional=True)
 def cmd_blacklist(ev, arg):
 	c_user = UserContainer(ev.from_user)
+
+	#This whole thing isn't perfect. It's slightly possible that a mod could accidentally not reply, and then /ban with a four-letter word at the start of the reason, and it just HAPPENS that the word is someone's random code for today, and that person would be banned. Whups!
 	if ev.reply_to_message is None:
+		username = arg
+		if " " not in username:
+			arg = ""
+		else:
+			pos = username.find(" ")
+			arg = username[pos+1:].strip()
+			username = username[:pos].lower()
+		if username:
+			username = removeSensitiveInfo(ev, username)
+			return send_answer(ev, core.blacklist_user(c_user, username, arg))
 		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
 
-	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
-	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
-	return send_answer(ev, core.blacklist_user(c_user, reply_msid, arg), True)
+	user_id = getUserIdFromReply(ev)
 
-@takesArgument(optional=True)
+	return send_answer(ev, core.blacklist_user(c_user, user_id, arg), True)
+
+@takesArgument(optional=True, isUsername=True)
 def cmd_unblacklist(ev, arg):
 	c_user = UserContainer(ev.from_user)
-	if not arg.strip():
+	if arg:
+		return send_answer(ev, core.unblacklist_user(c_user, arg))
+	if ev.reply_to_message is None:
 		return send_answer(ev, core.show_unblacklist(c_user))
-	arg = removeSensitiveInfo(ev, arg)
-	return send_answer(ev, core.unblacklist_user(c_user, arg))
 
-@takesArgument(optional=True)
+	user_id = getUserIdFromReply(ev)
+
+	return send_answer(ev, core.unblacklist_user(c_user, user_id), True)
+
+@takesArgument(optional=True, isUsername=True)
 def cmd_demote(ev, arg):
 	c_user = UserContainer(ev.from_user)
-	if arg.strip():
-		arg = removeSensitiveInfo(ev, arg)
+	if arg:
 		return send_answer(ev, core.demote_user(c_user, arg))
 	if ev.reply_to_message is None:
 		return send_answer(ev, core.show_demotelist(c_user))
 
-	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
-	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+	user_id = getUserIdFromReply(ev)
 
-	return send_answer(ev, core.demote_user(c_user, arg), True)
+	return send_answer(ev, core.demote_user(c_user, user_id), True)
 
 def plusone(ev):
 	c_user = UserContainer(ev.from_user)
@@ -944,13 +967,12 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 	if ev.content_type == "poll" and not is_forward(ev):
 		core.delete_message(user, msid, False)
 
-@takesArgument(optional=True)
+@takesArgument(optional=True, isUsername=True)
 def cmd_exposeto(ev, arg):
 	c_user = UserContainer(ev.from_user)
-	if not arg.strip():
+	if not arg:
 		return send_answer(ev, rp.Reply(rp.types.ERR_EXPOSE_CONFIRM), True)
 
-	arg = removeSensitiveInfo(ev, arg)
 	user = db.getUser(id=ev.from_user.id)
 	#FIX: this can probably just be done in the replies.py, with the data passed into that.
 	fmt = user.tripname+user.triphash+" has revealed theirself to you privately as <a href=\"tg://user?id="+str(user.id)+"\">" + user.getFormattedName() + "</a>!"

@@ -9,8 +9,8 @@ from src.database import User, SystemConfig
 from src.cache import CachedMessage
 from src.util import genTripcode
 
-db = None
-ch = None
+db = None # SQLiteDatabase
+ch = None # Cache
 spam_scores = None
 tripcode_last_used = {} # uid -> datetime
 
@@ -34,7 +34,7 @@ def init(config, _db, _ch):
 	allow_remove_command = config.get("allow_remove_command",False)
 	if "media_limit_period" in config.keys():
 		media_limit_period = timedelta(hours=int(config["media_limit_period"]))
-	tripcode_interval = timedelta(hours=int(config.get("tripcode_limit_interval", 1)))
+	tripcode_interval = timedelta(hours=int(config.get("tripcode_limit_interval", 0)))
 	tripcode_toggle = config.get("tripcode_toggle",False)
 
 	if config.get("locale"):
@@ -115,6 +115,7 @@ def getUserByName(username):
 	return None
 
 def isTooSensitive(arg, user):
+	arg = str(arg)
 	# user IDs are not 'sensitive' unless prepended with "##". This allows IDs to be passed in by other parts of the program. Any ID typed by the moderators should be prepended before coming here.
 	# is username and not tripcode, or is ID, and user not admin?
 	return (arg.startswith("##@") and arg.find("!") < 0 or re.search("^##[0-9+]{5,}$",arg) is not None) and user.rank < RANKS.admin
@@ -229,6 +230,8 @@ def user_join(c_user):
 		user = None
 
 	if user is not None:
+		if user.isJoined():
+			err = rp.Reply(rp.types.USER_IN_CHAT)
 		# check if user can't rejoin
 		err = None
 		if whitelist:
@@ -243,8 +246,6 @@ def user_join(c_user):
 				err = rp.Reply(rp.types.ERR_NOTWHITELISTED,  contact=blacklist_contact)
 		elif user.isBlacklisted():
 			err = rp.Reply(rp.types.ERR_BLACKLISTED, reason=user.blacklistReason, contact=blacklist_contact)
-		elif user.isJoined():
-			err = rp.Reply(rp.types.USER_IN_CHAT)
 		if err is not None:
 			with db.modifyUser(id=user.id) as user:
 				updateUserFromEvent(user, c_user)
@@ -276,7 +277,6 @@ def user_join(c_user):
 			logging.info("%s tried to join", user)
 			ret = [rp.Reply(rp.types.ERR_NOTWHITELISTED,  contact=blacklist_contact)]
 
-	# I could add a toggle for these messages
 	for admin in db.iterateAdmins():
 		_push_system_message(rp.Reply(rp.types.NEW_USER), who=admin) 
 	db.addUser(user)
@@ -328,12 +328,16 @@ def get_info(user):
 
 @requireUser
 @requireRank(RANKS.mod)
-def get_info_mod(user, msid):
-	cm = ch.getMessage(msid)
-	if cm is None or cm.user_id is None:
-		return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
+def get_info_mod(user, username):
+	if isTooSensitive(username, user):
+		return rp.Reply(rp.types.ERR_ADMIN_SEARCH)
 
-	user2 = db.getUser(id=cm.user_id)
+	user2 = getUserByName(username)
+	if user2 == -1:
+		return rp.Reply(rp.types.ERR_COLLISION)
+	elif user2 is None:
+		return rp.Reply(rp.types.ERR_NO_USER)
+
 	params = {
 		"id": user2.getObfuscatedId(),
 		"karma": user2.getObfuscatedKarma(),
@@ -403,7 +407,8 @@ def set_tripcode(user, text):
 	if tripcode_interval.total_seconds() > 1:
 		last_used = tripcode_last_used.get(user.id, None)
 		if last_used and (datetime.now() - last_used) < tripcode_interval:
-			diff = tripcode_interval - (datetime.now() - last_used)
+			diff = str(tripcode_interval - (datetime.now() - last_used)+timedelta(minutes=1))
+			diff = diff[:diff.rfind(":")]
 			return rp.Reply(rp.types.ERR_SPAMMY_TRIPCODE,time_left=diff)
 		tripcode_last_used[user.id] = datetime.now()
 
@@ -577,6 +582,7 @@ def unwhitelist_user(c_user, username):
 		return rp.Reply(rp.types.ERR_NO_USER)
 
 	try:
+		db.getWhitelistedUser(user2.id)
 		db.addWhitelistedUser(user2.id, toWhitelist=False)
 	except KeyError as e:
 		return rp.Reply(rp.types.ERR_NOTHING_TO_DO)
@@ -591,21 +597,25 @@ def whitelist_reply(call):
 
 @requireUser
 @requireRank(RANKS.admin)
-def blacklist_user(user, msid, reason):
-	cm = ch.getMessage(msid)
-	if cm is None or cm.user_id is None:
-		return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
+def blacklist_user(user, username, reason):
+	logging.info(username)
+	user2 = getUserByName(username)
+	if user2 == -1:
+		return rp.Reply(rp.types.ERR_COLLISION)
+	elif user2 is None:
+		return rp.Reply(rp.types.ERR_NO_USER)
 
-	with db.modifyUser(id=cm.user_id) as user2:
-		if user2.rank >= user.rank:
+	with db.modifyUser(id=user2.id) as user2:
+		if user2.rank >= user.rank or user2.rank > RANKS.mod:
 			return
 		user2.setBlacklisted(reason)
-	cm.warned = True
+
+	# cm.warned = True
 	Sender.stop_invoked(user2, True) # do this before queueing new messages below
 	_push_system_message(
 		rp.Reply(rp.types.ERR_BLACKLISTED, reason=reason, contact=blacklist_contact),
-		who=user2, reply_to=msid)
-	Sender.delete(msid)
+		who=user2)#, reply_to=msid)
+	# Sender.delete(msid)
 	logging.info("%s was blacklisted by %s for: %s", user2, user, reason)
 	return rp.Reply(rp.types.SUCCESS)
 
