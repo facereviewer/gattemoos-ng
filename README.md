@@ -46,15 +46,11 @@ tripcode - Show or set a tripcode for your messages
 ```
 
 ## Running on a server
-1. Get a server somewhere.
-2. Brush up on terminals! There are SSH programs you can use on Windows that might be graphical. You can use Windows Subsystem for Linux (WSL) to run ubuntu or such from a cmd window. Otherwise you'll know all this stuff already.
-3. SSH into root at your server's address.
-4. Make a new user account to run the bots, give them sudoing rights (`usermod -aG sudo whomever`)
-5. You can use sftp to transfer files. On Windows, just get WinSCP and set up a connection to that new account at the server's IP address. Drag all the files across.
-6. SSH into the new user account. You might need to `sudo apt-get update` and then `sudo apt-get install python3-pip`. Use pip3 to install requirements.txt.
-7. Copy default configuration from `config.yaml.example` to `bot1/config.yaml`. Edit `bot1/config.yaml` and paste in your bot key from BotFather.
-8. Turn the python file into a program: `sudo chmod 755 secretlounge-ng`.
-9. You'll want to run it on the server and close the SSH window, so get `sudo apt-get install screen`.
+1. You should either know this part, or get some general experience. Take a course! SSH, SFTP, and so on. Make sure you create a new user account to run the bots.
+2. Setup: You might need to `sudo apt-get update` and then `sudo apt-get install python3-pip`. Use pip3 to install requirements.txt.
+3. Copy default configuration from `config.yaml.example` to `bot1/config.yaml`. Edit `bot1/config.yaml` and paste in your bot key from BotFather.
+4. Turn the python file into a program: `sudo chmod 755 secretlounge-ng`.
+5. You'll want to run it on the server and close the SSH window, so use `sudo apt-get install screen`.
 
 ### Running:
 1. `screen -dmS bot1` where 'bot1' can be any name you choose.
