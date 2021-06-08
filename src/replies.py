@@ -178,14 +178,14 @@ format_strs = {
 	types.ERR_NOTHING_TO_DO: em("Already done!"),
 
 	types.USER_INFO: lambda warnings, cooldown, **_:
-		"<b>id</b>: {id}, <b>username</b>: {username!x}, <b>rank</b>: {rank_i} ({rank})\n"+
+		"<b>id</b>: {id}, <b>name</b>: {username!x}\n<b>rank</b>: {rank_i} ({rank}), "+
 		"<b>karma</b>: {karma}\n"+
 		"<b>warnings</b>: {warnings} " + smiley(warnings)+
 		( " (one warning will be removed on {warnExpiry!t})" if warnings > 0 else "" ) + ", "+
 		"<b>cooldown</b>: "+
 		( cooldown and "yes, until {cooldown!t}" or "no" ),
 	types.USER_INFO_MOD: lambda cooldown, **_:
-		"<b>id</b>: {id}, <b>username</b>: anonymous, <b>rank</b>: n/a, "+
+		"<b>id</b>: {id}, <b>name</b>: {username!x}\n<b>rank</b>: {rank_i} ({rank}), "+
 		"<b>karma</b>: {karma}\n"+
 		"<b>cooldown</b>: "+
 		( cooldown and "yes, until {cooldown!t}" or "no" ),

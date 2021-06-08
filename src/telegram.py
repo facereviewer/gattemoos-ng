@@ -674,7 +674,7 @@ cmd_users = wrap_core(core.get_users)
 def cmd_info(ev, arg):
 	c_user = UserContainer(ev.from_user)
 	if arg:
-		return send_answer(ev, core.get_info_mod(c_user, arg), True)
+		return send_answer(ev, core.get_info_mod(c_user, arg))
 
 	if ev.reply_to_message is None:
 		return send_answer(ev, core.get_info(c_user), True)

@@ -316,7 +316,7 @@ def adminhelp(c_user):
 def get_info(user):
 	params = {
 		"id": user.getObfuscatedId(),
-		"username": user.getFormattedName(),
+		"username": user.tripname + user.triphash or "anonymous",
 		"rank_i": user.rank,
 		"rank": RANKS.reverse[user.rank],
 		"karma": user.karma,
@@ -340,6 +340,9 @@ def get_info_mod(user, username):
 
 	params = {
 		"id": user2.getObfuscatedId(),
+		"username":  user2.tripname + user2.triphash or "anonymous",
+		"rank_i": user.rank,
+		"rank": RANKS.reverse[user.rank],
 		"karma": user2.getObfuscatedKarma(),
 		"cooldown": user2.cooldownUntil if user2.isInCooldown() else None,
 	}
