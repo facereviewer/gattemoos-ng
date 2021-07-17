@@ -362,8 +362,10 @@ CREATE TABLE IF NOT EXISTS `users` (
 				self.db.execute("ALTER TABLE `users` ADD `tripname` TEXT")
 			if not row_exists("users", "triphash"):
 				self.db.execute("ALTER TABLE `users` ADD `triphash` TEXT")
+			if not row_exists("users", "salt"):
+				self.db.execute("ALTER TABLE `users` ADD `salt` TEXT")
 			if not row_exists("users", "tripcodeToggle"):
-				self.db.execute("ALTER TABLE `users` ADD `tripcodeToggle` TINYINT")
+				self.db.execute("ALTER TABLE `users` ADD `tripcodeToggle` TINYINT") # FIX: Look up SQL to default to true, test it.
 			if not row_exists("users", "forwardWarned"):
 				self.db.execute("ALTER TABLE `users` ADD `forwardWarned` TINYINT")
 	def getUser(self, id=None):
