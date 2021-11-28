@@ -23,6 +23,7 @@ exposeto - Send your real username to someone else
 tsign - Sign a message with your tripcode
 t - Alias of tsign
 motd - Show the welcome message
+help - Show the help message
 version - Get version & source code of this bot
 modhelp - Show commands available to moderators
 adminhelp - Show commands available to admins
@@ -59,7 +60,7 @@ tripcode - Show or set a tripcode for your messages
 4. You can now `exit` and close your session
 
 ### Shutting it down:
-1. `screen -r bot1` to resume
+1. `screen -Dr bot1` to resume
 2. On your keyboard, press `Ctrl + C` to stop the program
 
 ## Create another bot

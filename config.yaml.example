@@ -7,8 +7,8 @@ database: [sqlite, "bot1/secretlounge.db"]
 #WARNING: Changes have not been tested with JSON.
 
 # Relay media
-allow_contacts: false # contacts
-allow_documents: true # arbitrary files (other than GIFs)
+#allow_contacts: true # contacts
+#allow_documents: true # arbitrary files (other than GIFs)
 
 # Allow commands (false if removed or commented)
 allow_remove_command: true # /remove messages without a cooldown
@@ -20,13 +20,18 @@ whitelist: true # /whitelist users or they cannot join
 allow_edits: true
 
 # Limit usage of /tripcode to once in every X hours
-tripcode_limit_interval: 1
+tripcode_limit_interval: 0.16
 
 # point of contact shown to blacklisted users
 #blacklist_contact: http://t.me/invite/something
 
+# Allow photos and videos
+media_allowed: true
 # Stop new users from sending media or forwards for X hours
 #media_limit_period: 3
+# Karma minimums for Stickers, Images, then Videos (0,0,0 is default)
+#media_karma: [-1,-1,-1]
+#media_karma: [1,5,10]
 
 # map of bots that users can refer to in their messages (optional)
 # e.g. >>>/foo/ would be turned into an inline link to http://t.me/foochatbot
