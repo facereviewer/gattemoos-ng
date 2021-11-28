@@ -1,0 +1,37 @@
+# Telegram bot token
+bot_token: "1859554624:AAFAsHvsdat0wmIH8Nfw1snSQmCIQwdchxI"
+
+# supported db types: json, sqlite
+# both take a single argument which is the database path
+database: [sqlite, "bot2/secretlounge.db"]
+#WARNING: Changes have not been tested with JSON.
+
+# Relay media
+allow_contacts: false # contacts
+allow_documents: true # arbitrary files (other than GIFs)
+
+# Allow commands (false if removed or commented)
+allow_remove_command: true # /remove messages without a cooldown
+enable_expose: true # /expose true identity to another member
+#tripcode_toggle: true # /tripcodetoggle sets anonymous mode
+whitelist: true # /whitelist users or they cannot join
+
+# Allow editing of recent messages
+allow_edits: true
+
+# Limit usage of /tripcode to once in every X hours
+tripcode_limit_interval: 1
+
+# point of contact shown to blacklisted users
+#blacklist_contact: http://t.me/invite/something
+
+# Stop new users from sending media or forwards for X hours
+#media_limit_period: 3
+
+# map of bots that users can refer to in their messages (optional)
+# e.g. >>>/foo/ would be turned into an inline link to http://t.me/foochatbot
+#linked_network:
+#  foo: foochatbot
+#  bar: barchatbot
+# alternatively the map can also be loaded from another YAML file using this syntax
+#linked_network: "./somewhere/bots.yml"
