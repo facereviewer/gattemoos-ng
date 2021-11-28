@@ -83,8 +83,6 @@ Sometimes you can't access one of their messages. To whitelist a new user, unban
 
 You can paste in their tripcode or obfuscated ID. For example, `/mod someone!d30I83hFJ2` will find that person and make them a moderator. Admins can also search by username or id, but be careful never to accidentally send that to everyone by forgetting the `/` at the start of your command. That sensitive data will be deleted automatically from your chat window.
 
-(Banning by username doesn't currently work. If they've never said anything, you'll have to use the server script.)
-
 2. **What is the suggested setup to run multiple bots?**
 
 The administrative scripts support a structure like the following where each bot has its' own subdirectory:

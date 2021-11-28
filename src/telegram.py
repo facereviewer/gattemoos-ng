@@ -11,8 +11,8 @@ import src.replies as rp
 from src.util import MutablePriorityQueue
 from src.globals import *
 
-# module constants
-MEDIA_FILTER_TYPES = ("photo", "animation", "document", "video", "sticker")
+# Used with media_limit_period and media_enabled
+MEDIA_FILTER_TYPES = ("photo", "animation", "video", "sticker", "document") #FIX: This is just used for media_limit_period and media_enabled, so we can add more media types here.
 CAPTIONABLE_TYPES = ("photo", "audio", "animation", "document", "video", "voice")
 HIDE_FORWARD_FROM = set([
 	"anonymize_bot", "AnonFaceBot", "AnonymousForwarderBot", "anonomiserBot",
@@ -35,9 +35,11 @@ allow_documents = None
 linked_network: dict = None
 tripcode_toggle = None
 allow_edits = None
+media_allowed = None
+media_karma = None
 
 def init(config, _db, _ch):
-	global bot, db, ch, message_queue, allow_documents, linked_network, tripcode_toggle, allow_edits
+	global bot, db, ch, message_queue, allow_documents, linked_network, tripcode_toggle, allow_edits, media_allowed, media_karma
 	if config["bot_token"] == "":
 		logging.error("No telegram token specified.")
 		exit(1)
@@ -51,10 +53,12 @@ def init(config, _db, _ch):
 	ch = _ch # Cache
 	message_queue = MutablePriorityQueue()
 
-	allow_contacts = config["allow_contacts"]
-	allow_documents = config["allow_documents"]
+	allow_contacts = config.get("allow_contacts",False)
+	allow_documents = config.get("allow_documents",False)
 	linked_network = config.get("linked_network")
 	tripcode_toggle = config.get("tripcode_toggle",False)
+	media_allowed = config.get("media_allowed",False)
+	media_karma = config.get("media_karma",[0,0,0])
 	allow_edits = config.get("allow_edits", False)
 	if linked_network is not None and not isinstance(linked_network, dict):
 		logging.error("Wrong type for 'linked_network'")
@@ -65,16 +69,18 @@ def init(config, _db, _ch):
 		types += ["contact"]
 	if allow_documents:
 		types += ["document"]
-	types += ["animation", "audio", "photo", "sticker", "video", "video_note", "voice", "poll"]
+	types += ["animation", "photo", "video", "video_note"]
+	types += ["audio", "sticker", "voice", "poll"]
 
 	# Unused commands
 	#cmds = [
-	#	"s", "sign", "t", "tsign"
+	#	, "s", "sign", "me"
 	#]
 	
 	# Trimmed command list
 	cmds = [
-		"start", "stop", "users", "info", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "demote", "warn", "delete", "remove", "uncooldown", "whitelist", "blacklist", "unblacklist", "exposeto", "tripcode", "tripcodetoggle", "ban", "unban", "unwhitelist"
+		"start", "stop", "users", "info", "help", "rules", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "demote", "warn", "delete", "remove", "uncooldown", "whitelist", "blacklist", "unblacklist", "exposeto", "tripcode", "tripcodetoggle", "ban", "unban", "unwhitelist", "t", "tsign", "lock", "cleanup"
+		#FIX: /unlock?
 	]
 	for c in cmds: # maps /<c> to the function cmd_<c>
 		c = c.lower()
@@ -225,20 +231,22 @@ def takesArgument(optional=False, isUsername=False):
 
 def removeSensitiveInfo(ev, arg):
 	c_user = UserContainer(ev.from_user)
+	arg = str(arg)
 	# is username and not tripcode, or is ID, delete
-	if (arg.startswith("@") and arg.find("!") < 0 or re.search("^[0-9+]{5,}$",arg) is not None):
+	args = arg.split(" ")
+	if (args[0].startswith("@") and args[0].find("!") < 0 or re.search("^[0-9+]{5,}$",args[0]) is not None):
 		core.delete_message(c_user, ev.message_id, False)
 		send_answer(ev, rp.Reply(rp.types.SENSITIVE))
-		return "##"+str(arg)
+		return "##"+arg
 	return arg
 
 def getUserIdFromReply(ev):
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 	if reply_msid is None:
-		send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
 	cm = ch.getMessage(reply_msid)
 	return cm.user_id
-
+	
 def wrap_core(func, reply_to=False):
 	def f(ev):
 		m = func(UserContainer(ev.from_user))
@@ -443,6 +451,8 @@ def send_thread():
 def is_forward(ev):
 	return (ev.forward_from is not None or ev.forward_from_chat is not None
 		or ev.json.get("forward_sender_name") is not None)
+def get_forwardid(ev): #FIX: Probably needs a ev.json.get("forward_sender_id") or something
+	return (ev.forward_from.id if ev.forward_from else ev.forward_from_chat.id if ev.forward_from_chat else None)
 
 def should_hide_forward(ev):
 	# Hide forwards from anonymizing bots that have recently become popular.
@@ -453,7 +463,11 @@ def should_hide_forward(ev):
 	return False
 
 def resend_message(chat_id, ev, reply_to=None, force_caption: FormattedMessage=None):
+
+	# logging.info("from: "+str(ev.forward_from))
 	if should_hide_forward(ev):
+		pass
+	elif is_forward(ev) and get_forwardid(ev) == ev.from_user.id:
 		pass
 	elif is_forward(ev):
 		# forward message instead of re-sending the contents
@@ -507,7 +521,8 @@ def resend_message(chat_id, ev, reply_to=None, force_caption: FormattedMessage=N
 	elif ev.content_type == "sticker":
 		return bot.send_sticker(chat_id, ev.sticker.file_id, **kwargs)
 	elif ev.content_type == "poll":
-		return ev
+		return bot.forward_message(chat_id, ev.chat.id, ev.message_id)
+
 	else:
 		raise NotImplementedError("content_type = %s" % ev.content_type)
 
@@ -613,6 +628,7 @@ class MyReceiver(core.Receiver):
 	@staticmethod
 	def delete(msid, user_id=None):
 		tmp = ch.getMessage(msid)
+		logging.info("msid: "+str(msid))
 		except_id = None #if tmp is None else tmp.user_id
 		message_queue.delete(lambda item, msid=msid: item.msid == msid)
 		# FIXME: there's a hard to avoid race condition here:
@@ -635,9 +651,11 @@ class MyReceiver(core.Receiver):
 			def f(user_id=user_id, id=id):
 				while True:
 					try:
-						bot.delete_message(user_id, id)
+						if id is not None:
+							bot.delete_message(user_id, id)
 					#FIX: This is because of my deletion code
 					except telebot.apihelper.ApiTelegramException as e:
+						logging.info("API Error. Deletion code?")
 						return
 					except telebot.apihelper.ApiException as e:
 						retry = check_telegram_exc(e, None)
@@ -680,11 +698,21 @@ def cmd_info(ev, arg):
 		return send_answer(ev, core.get_info(c_user), True)
 
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
-	cm = ch.getMessage(reply_msid)
-
 	if reply_msid is None:
 		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+	cm = ch.getMessage(reply_msid)
+
 	return send_answer(ev, core.get_info_mod(c_user, cm.user_id), True)
+
+# FIX: Could add a special method that looks for extra_{something} and create as many custom commands as needed.
+@takesArgument(optional=True)
+def cmd_help(ev, arg):
+	c_user = UserContainer(ev.from_user)
+
+	if arg == "":
+		send_answer(ev, core.get_help(c_user), reply_to=True)
+	else:
+		send_answer(ev, core.set_help(c_user, arg), reply_to=True)
 
 @takesArgument(optional=True)
 def cmd_motd(ev, arg):
@@ -761,12 +789,14 @@ def cmd_warn(ev, delete=False, only_delete=False):
 		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
 
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+	messagetext = ev.reply_to_message.text
+
 	if reply_msid is None:
 		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
 	if only_delete:
-		r = core.delete_message(c_user, reply_msid)
+		r = core.delete_message(c_user, reply_msid, text=messagetext)
 	else:
-		r = core.warn_user(c_user, reply_msid, delete)
+		r = core.warn_user(c_user, reply_msid, delete, text=messagetext)
 	send_answer(ev, r, True)
 
 cmd_delete = lambda ev: cmd_warn(ev, delete=True)
@@ -777,7 +807,7 @@ cmd_remove = lambda ev: cmd_warn(ev, only_delete=True)
 def cmd_uncooldown(ev, arg):
 	c_user = UserContainer(ev.from_user)
 	if arg:
-		return send_answer(ev, core.uncooldown_user(c_user, arg), True)
+		return send_answer(ev, core.uncooldown_user(c_user, arg))
 
 	if ev.reply_to_message is None:
 		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
@@ -832,9 +862,13 @@ def cmd_blacklist(ev, arg):
 			return send_answer(ev, core.blacklist_user(c_user, username, arg))
 		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
 
-	user_id = getUserIdFromReply(ev)
+	messagetext = ev.reply_to_message.text
+	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+	if reply_msid is None:
+		send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+	cm = ch.getMessage(reply_msid)
 
-	return send_answer(ev, core.blacklist_user(c_user, user_id, arg), True)
+	return send_answer(ev, core.blacklist_user(c_user, cm.user_id, arg, msid=reply_msid, text=messagetext), True)
 
 @takesArgument(optional=True, isUsername=True)
 def cmd_unblacklist(ev, arg):
@@ -871,6 +905,8 @@ def plusone(ev):
 	return send_answer(ev, core.give_karma(c_user, reply_msid), True)
 
 
+# This is the entry point for handling messages from Telegram.
+# It just splits off some commands or tripcoded media, then goes to inner.
 def relay(ev):
 	# handle commands and karma giving
 	if ev.content_type == "text":
@@ -894,7 +930,8 @@ def relay(ev):
 
 # relay the message `ev` to other users in the chat
 # `caption_text` can be a FormattedMessage that overrides the caption of media
-# `expose` and `tripcode` indicate if the message is exposed or tripcoded respectively
+# `expose` and `tripcode` indicate if the message is exposed or tripcoded
+# returns void
 def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 	is_media = is_forward(ev) or ev.content_type in MEDIA_FILTER_TYPES
 	msid = core.prepare_user_message(UserContainer(ev.from_user), calc_spam_score(ev), is_media=is_media, expose=expose, tripcode=tripcode)
@@ -902,9 +939,6 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 		return send_answer(ev, msid) # don't relay message, instead reply
 
 	user = db.getUser(id=ev.from_user.id)
-	#On by default
-	if not tripcode_toggle:
-		tripcode=True
 
 	# apply text formatting to text or caption (if media)
 	ev_tosend = ev
@@ -915,7 +949,7 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 		fmt = FormattedMessageBuilder(caption_text, ev.caption, ev.text)
 		formatter_replace_links(ev, fmt)
 		formatter_network_links(fmt)
-		if tripcode or user.tripcodeToggle:
+		if tripcode or not tripcode_toggle or user.tripcodeToggle:
 			if user.tripcode is None:
 				return send_answer(ev, rp.Reply(rp.types.ERR_NEED_TRIPCODE), False)
 
@@ -937,53 +971,77 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 	# relay message to all other users
 	logging.debug("relay(): msid=%d reply_msid=%r", msid, reply_msid)
 
+	#FIX: All these _push_system_messages should be send_answer
+	if is_media and not media_allowed:
+		core._push_system_message(rp.Reply(rp.types.CUSTOM,text="<i>Media posting has been disabled.</i>"), who=user)
+		return
+
+	# FIX: This is ugly
+	if user.rank < RANKS.admin:
+		if ev.content_type in ["sticker"]:
+			if media_karma[MEDIA.stickers] < 0:
+				core._push_system_message(rp.Reply(rp.types.CUSTOM,text="<i>Sticker posting has been disabled.</i>"), who=user)
+				return
+			if user.karma < media_karma[MEDIA.stickers]:
+				core._push_system_message(rp.Reply(rp.types.CUSTOM,text="<i>You need %d more karma before you can send stickers.</i>"%(media_karma[MEDIA.stickers]-user.karma)), who=user)
+				return
+		if ev.content_type in ["photo"]:
+			if media_karma[MEDIA.photos] < 0:
+				core._push_system_message(rp.Reply(rp.types.CUSTOM,text="<i>Photo posting has been disabled.</i>"), who=user)
+				return
+			if user.karma < media_karma[MEDIA.photos]:
+				core._push_system_message(rp.Reply(rp.types.CUSTOM,text="<i>You need %d more karma before you can send images.</i>"%(media_karma[MEDIA.photos]-user.karma)), who=user)
+				return
+		if ev.content_type in ["animation", "video"]:
+			if media_karma[MEDIA.videos] < 0:
+				core._push_system_message(rp.Reply(rp.types.CUSTOM,text="<i>Video posting has been disabled.</i>"), who=user)
+				return
+			if user.karma < media_karma[MEDIA.videos]:
+				core._push_system_message(rp.Reply(rp.types.CUSTOM,text="<i>You need %d more karma before you can send GIFs or videos.</i>"%(media_karma[MEDIA.videos]-user.karma)), who=user)
+				return
+
+
 	if ev.content_type == "poll" and not is_forward(ev):
 		core._push_system_message(rp.Reply(rp.types.POLL), who=user)
-		poll = None
+		kwargs2 = {}
+		kwargs2["is_anonymous"]=True #Careful!
+		kwargs2["type"]=ev.poll.type
+		kwargs2["allows_multiple_answers"]=ev.poll.allows_multiple_answers
+		kwargs2["correct_option_id"]=ev.poll.correct_option_id
+		kwargs2["explanation"]=ev.poll.explanation
+		kwargs2["open_period"]=ev.poll.open_period
+		kwargs2["close_date"]=ev.poll.close_date
+		ch.saveMapping(user.id, msid, ev.message_id)
+		core.delete_message(user, msid, False)
+
+		poll = bot.send_poll(user.id, question=ev.poll.question, options=ev.poll.options, **kwargs2)
+		msid = core.prepare_user_message(user, calc_spam_score(ev))
+		ev_tosend = poll
+
 	for user2 in db.iterateUsers():
 		if not user2.isJoined():
 			continue
-
-		if ev.content_type == "poll" and not is_forward(ev):
-			if poll is None:
-				kwargs2 = {}
-				kwargs2["is_anonymous"]=True #Careful!
-				kwargs2["type"]=ev.poll.type
-				kwargs2["allows_multiple_answers"]=ev.poll.allows_multiple_answers
-				kwargs2["correct_option_id"]=ev.poll.correct_option_id
-				kwargs2["explanation"]=ev.poll.explanation
-				kwargs2["open_period"]=ev.poll.open_period
-				kwargs2["close_date"]=ev.poll.close_date
-				poll = bot.send_poll(user2.id, question=ev.poll.question, options=ev.poll.options, **kwargs2)
-			else:
-				bot.forward_message(user2.id, poll.chat.id, poll.message_id)
-
 		if user2 == user and not user.debugEnabled:
-			ch.saveMapping(user2.id, msid, ev.message_id)
+			ch.saveMapping(user.id, msid, ev_tosend.message_id)
 			continue
 
 		send_to_single(ev_tosend, msid, user2,
 			reply_msid=reply_msid, force_caption=force_caption)
-	if ev.content_type == "poll" and not is_forward(ev):
-		core.delete_message(user, msid, False)
 
 @takesArgument(optional=True, isUsername=True)
 def cmd_exposeto(ev, arg):
-	c_user = UserContainer(ev.from_user)
+	user = db.getUser(id=ev.from_user.id)
 	if not arg:
 		return send_answer(ev, rp.Reply(rp.types.ERR_EXPOSE_CONFIRM), True)
 
-	user = db.getUser(id=ev.from_user.id)
-	#FIX: this can probably just be done in the replies.py, with the data passed into that.
-	fmt = user.tripname+user.triphash+" has revealed theirself to you privately as <a href=\"tg://user?id="+str(user.id)+"\">" + user.getFormattedName() + "</a>!"
 	if ev.reply_to_message is None:
-		return send_answer(ev, core.expose_to_user(user,None,arg,fmt))	
+		return send_answer(ev, core.expose_to_user(user,None,arg))	
 
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 	if reply_msid is None:
 		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
 
-	return send_answer(ev, core.expose_to_user(user,reply_msid,arg,fmt), True)	
+	return send_answer(ev, core.expose_to_user(user,reply_msid,arg), True)	
 
 #cmd_s = cmd_sign # alias
 
@@ -992,7 +1050,53 @@ def cmd_tsign(ev, arg):
 	ev.text = arg
 	relay_inner(ev, tripcode=True)
 
+def cmd_lock(ev):
+	c_user = UserContainer(ev.from_user)
+
+	if ev.reply_to_message is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+
+	messagetext = ev.reply_to_message.text
+	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+
+	if reply_msid is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+
+	send_answer(ev, core.lock_message(c_user, reply_msid, text=messagetext), True)
+
+@takesArgument(optional=True, isUsername=True)
+def cmd_cleanup(ev, arg):
+	c_user = UserContainer(ev.from_user)
+	if arg:
+		return send_answer(ev, core.cleanup_user(c_user, arg))
+
+	if ev.reply_to_message is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+
+	user_id = getUserIdFromReply(ev)
+
+	return send_answer(ev, core.cleanup_user(c_user, user_id), True)
+
+
+
 cmd_t = cmd_tsign # alias
 
 cmd_ban = cmd_blacklist # alias
 cmd_unban = cmd_unblacklist # alias
+
+cmd_rules = cmd_motd # alias #FIX: make a secondary MOTD-like thing in the DB for rules.
+
+# @takesArgument()
+# def cmd_me(ev, arg):
+# 	user = db.getUser(id=ev.from_user.id)
+# 	ev.text = "<i>*anon "+arg.replace("<","&lt;").replace(">","&gt;")+"*</i>"
+# 	if ev.reply_to_message is not None:
+# 		reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+
+# 		if reply_msid is None:
+# 			return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+# 		core._push_system_message(rp.Reply(rp.types.CUSTOM,text=ev.text), reply_to=reply_msid, except_who=user)
+
+# 	core._push_system_message(rp.Reply(rp.types.CUSTOM,text=ev.text),except_who=user)
+# 	msid = ch.assignMessageId(ev.message_id)
+# 	ch.saveMapping(user.id, msid, ev.message_id)

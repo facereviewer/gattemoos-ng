@@ -3,6 +3,8 @@ from src.util import Enum
 # a few utility functions
 def escape_html(s):
 	ret = ""
+	if s is None:
+		return ""
 	for c in s:
 		if c in ("<", ">", "&"):
 			c = "&#" + str(ord(c)) + ";"
@@ -41,10 +43,18 @@ VERSION = "1.7"
 
 # Ranks
 RANKS = Enum({
-	"admin": 100,
+	"owner": 100,
+	"admin": 50,
 	"mod": 10,
 	"user": 0,
 	"banned": -10
+})
+
+# Types of media
+MEDIA = Enum({
+		"videos":2,
+		"photos":1,
+		"stickers":0
 })
 
 # Cooldown related

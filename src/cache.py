@@ -6,11 +6,12 @@ from threading import Lock
 from src.globals import *
 
 class CachedMessage():
-	__slots__ = ('user_id', 'time', 'warned', 'upvoted')
+	__slots__ = ('user_id', 'time', 'warned', 'locked', 'upvoted')
 	def __init__(self, user_id=None):
 		self.user_id = user_id # who has sent this message
 		self.time = datetime.now() # when was this message seen?
 		self.warned = False # was the user warned for this message?
+		self.locked = False # is this message bad for people to /exposeto?
 		self.upvoted = set() # set of users that have given this message karma
 	def isExpired(self):
 		return datetime.now() >= self.time + timedelta(hours=36)
@@ -37,6 +38,9 @@ class Cache():
 		# data is not None
 		gen = ( msid for msid, _data in x[uid].items() if _data == data )
 		return next(gen, None)
+	def _allMappings(self, x, uid):
+		gen = ( msid for msid, _cache in x.items() if _cache.user_id == uid)
+		return gen
 
 	def assignMessageId(self, cm):
 		with self.lock:
@@ -54,6 +58,11 @@ class Cache():
 			raise ValueError()
 		with self.lock:
 			return self._lookupMapping(self.idmap, uid, msid, data)
+	def allMappings(self, uid):
+		if uid is None:
+			raise ValueError()
+		with self.lock:
+			return self._allMappings(self.msgs, uid)
 	def expire(self):
 		ids = set()
 		with self.lock:

@@ -67,7 +67,9 @@ types = NumericEnum([
 	"ERR_NOTWHITELISTED",
 	"ERR_ALREADY_WHITELISTED",
 	"ERR_NOT_BLACKLISTED",
+	"ERR_ALREADY_BLACKLISTED",
 	"ERR_BLACKLISTED",
+	"ERR_WITH_BLACKLISTED",
 	"ERR_ALREADY_UPVOTED",
 	"ERR_UPVOTE_OWN_MESSAGE",
 	"ERR_SPAMMY",
@@ -92,6 +94,7 @@ types = NumericEnum([
 	"PROGRAM_VERSION",
 	"HELP_MODERATOR",
 	"HELP_ADMIN",
+	"UNUSED_HELP_COMMAND"
 ])
 
 # formatting of these as user-readable text
@@ -120,31 +123,31 @@ format_strs = {
 	types.USER_NOT_IN_CHAT: em("You're not in the chat yet. Use /start to join!"),
 	types.GIVEN_COOLDOWN: lambda deleted, **_:
 		em( "You've been handed a cooldown of {duration!d} for this message"+
-			(deleted and " (message also deleted)" or "") ),
+			(deleted and " (message was deleted: {text!x})" or "") ),
 	types.MESSAGE_DELETED:
-		em( "Your message has been deleted. No cooldown has been "
-			"given this time, but refrain from posting it again." ),
+		em( "Your message has been deleted, with no penalty." ),
 	types.PROMOTED_MOD: em("You've been promoted to moderator, run /modhelp for a list of commands."),
 	types.PROMOTED_ADMIN: em("You've been promoted to admin, run /adminhelp for a list of commands."),
 	types.DEMOTED: "You were demoted.",
 	types.DEMOTELIST_INFO: "Please select a mod or admin to demote:",
 	types.KARMA_THANK_YOU: em("You just gave this user some sweet karma, awesome!"),
 	types.KARMA_NOTIFICATION:
-		em( "You've just been given sweet karma! (check /info to see your karma"+
-			" or /toggleKarma to turn these notifications off)" ),
+		em( "You got +1 karma!" ),
 	types.TRIPCODE_INFO: lambda tripcode, **_:
 		"<b>tripcode</b>:\n " + ("<code>{tripcode!x}</code>" if tripcode is not None else "unset"),
 	types.TRIPCODE_SET: em("Tripcode set. It will appear as:\n") + "<b>{tripname!x}</b> <code>{triphash!x}</code>",
-	types.EXPOSE_TO: "{realname}",
-	types.EXPOSED: em("Your real handle has been exposed to {name!x}."),
-	types.NEW_USER: "<b><i>A new user has tried joining.</i></b>",
+	types.EXPOSE_TO: lambda name, link, **_:
+		"<i>{name} has revealed theirself to you privately as {link}!</i>",
+	types.EXPOSED: em("Your real handle has been exposed to anon."),
+	types.NEW_USER: "<b><i>A new user has started the bot.</i></b>",
 	types.WHITELIST_INFO: em("Please select a recent user from the list below to add to the whitelist:"),
 	types.UNBLACKLIST_INFO: em("Please select a banned user from the list below to remove from the blacklist:"),
 
 	types.ERR_NO: em("Actually no"),
 	types.ERR_NO_EDITING: em("Edits will not be seen by other members."),
 	types.ERR_COMMAND_DISABLED: em("This command has been disabled."),
-	types.ERR_ADMIN_SEARCH: em("Only an admin can search by username!"),
+	#	types.ERR_ADMIN_SEARCH: em("Only an admin can search by username!"), #AWOO
+	types.ERR_ADMIN_SEARCH: em("Please only search by tripcode or OID."),
 	types.ERR_NO_REPLY: em("You need to reply to a message to use this command."),
 	types.ERR_NOT_IN_CACHE: em("Message not found in cache... (36h passed or bot was restarted)"),
 	types.ERR_NO_USER: em("No user found by that name!"),
@@ -158,9 +161,11 @@ format_strs = {
 		( em("\ncontact:") + " {contact}" if contact else "" ),
 	types.ERR_ALREADY_WHITELISTED: em("This user has already been added to the whitelist."),
 	types.ERR_NOT_BLACKLISTED: em("This user has not been banned."),
+	types.ERR_ALREADY_BLACKLISTED: em("This user has already been banned."),
 	types.ERR_BLACKLISTED: lambda reason, contact, **_:
 		em( "You've been blacklisted" + (reason and " for {reason!x}" or "") )+
 		( em("\ncontact:") + " {contact}" if contact else "" ),
+	types.ERR_WITH_BLACKLISTED: em("This user has been banned."),
 	types.ERR_ALREADY_UPVOTED: em("You have already upvoted this message."),
 	types.ERR_UPVOTE_OWN_MESSAGE: em("You can't upvote your own message."),
 	types.ERR_SPAMMY: em("Your message has not been sent. Avoid sending messages too fast, try again later."),
@@ -171,7 +176,7 @@ format_strs = {
 	types.ERR_NO_TRIPCODE: em("You don't have a tripcode set."),
 	types.ERR_NEED_TRIPCODE: "<i>This chat requires a tripcode to be set before you can send messages. Please use\n<code>/tripcode somename#apassword</code> where 'somename' is any name you'd like and 'apassword' is a secret password that will protect your identity.</i>",
 	types.ERR_MEDIA_LIMIT: em("You can't send media or forward messages at this time, try again later."),
-	types.ERR_EXPOSE_CONFIRM: "<i>This will expose your real username. Please use <code>/exposeto yes</code> while replying to someone's message to confirm that you want to expose your username to them.</i>",
+	types.ERR_EXPOSE_CONFIRM: "<i>This will expose your real username.\nPlease use <code>/exposeto yes</code> while replying to someone's message to confirm that you want to expose your username to them.</i>",
 	types.ERR_NO_WAITLIST: em("There is no one waiting to be whitelisted."),
 	types.ERR_NO_UNBLACKLIST: em("There has been no one blacklisted."),
 	types.ERR_NO_LIST: em("There is no one to show."),
@@ -195,8 +200,8 @@ format_strs = {
 		"{blacklisted} <i>blacklisted users</i> (<i>total</i>: {total})",
 	types.POLL: "Your poll has been forwarded anonymously.",
 
-	types.PROGRAM_START: "<b>Furry Lounge has restarted.</b>\nsecretlounge-ng v{version}",
-	types.PROGRAM_VERSION: "secretlounge-ng v{version} ~ https://github.com/dogmike/secretlounge-ng",
+	types.PROGRAM_START: "<b>Secret Lounge has restarted.</b>\nsecretlounge-ng vZ.o.o",
+	types.PROGRAM_VERSION: "secretlounge-ng vZ.o.o",
 	types.HELP_MODERATOR:
 		"<i>Moderators can use the following commands</i>:\n"+
 		"  /modhelp - show this text\n"+
@@ -205,8 +210,11 @@ format_strs = {
 		"<i>Or reply to a message and use</i>:\n"+
 		"  /info - get info about the user that sent this message\n"+
 		"  /warn - warn the user that sent this message (cooldown)\n"+
-		"  /delete - delete a message and warn the user\n"
-		"  /remove - delete a message without a cooldown/warning",
+		"  /lock - stops people from exposing themselves through that message\n"+
+		"  /blacklist [reason] - blacklist the user who sent this message (can also use /ban)\n"+
+		"  /delete - delete a message and warn the user\n"+
+		"  /remove - delete a message without a cooldown/warning\n"+
+		"  /cleanup - remove all posts if the user was banned",
 	types.HELP_ADMIN:
 		"<i>Admins can use the following commands</i>:\n"+
 		"  /adminhelp - show this text\n"+
@@ -220,8 +228,30 @@ format_strs = {
 		"  /demote - demote an admin or mod to user rank\n"+
 		"\n"+
 		"<i>Or reply to a message and use</i>:\n"+
-		"  /blacklist [reason] - blacklist the user who sent this message (can also use /ban)\n"+
 		"  /unblacklist - show a list of users to unban (can also use /unban)",
+	types.UNUSED_HELP_COMMAND:#this could be hard-coded like so, instead of customized in the /help command.
+	"/help <i>You can use the following commands</i>:\n"+
+	"  /stop — Stops the bot.\n"+
+	"  /start — Restarts the bot.\n"+
+	"  /users — Shows some stats.\n"+
+	"  /info — See your own info, including your obfuscated ID (OID), your tripcode, your karma, and information about cooldowns and warnings.\n"+
+	"  /motd — Shows the Message of the Day, which is just our /rules list.\n"+
+	"  /togglekarma — Turn off the +1 Karma messages, or turn them back on.\n"+
+	"  /tripcodetoggle — Keeps your tripcode turned on, so all your messages will be signed with your chosen pseudonym. <em>See below to set up the /tripcode.</em>\n"+
+	"\n"+
+	"<i>Or reply to someone else's message and use</i>:\n"+
+	"  +1 — Give them some karma.\n"+
+	"  /exposeto yes — Exposes your real identity to them. You have to type \"yes\" to avoid accidents.\n"+
+	"\n"+
+	"<i>These commands require you to type something in, similar to the examples shown.</i>:\n"+
+	"  /tripcode <code>chosen name</code>#<code>password</code> — A tripcode is made from your chosen name, the # symbol, and a password. The password you enter will be transformed into some random characters that will let people verify it's truly you speaking. This allows you to build a name for yourself here. The name and hash will show when you use /t in front of your messages. <b>Note:</b> Everyone can copy each other's names, so make sure to verify that their random hash is the same if you want to be sure they're the same person. The hash is created from their password, so people can't easily get the same hash.\n"+
+	"  /t or /tsign <code>my message</code> — Sends your message with your tripcode visible at the top, so everyone can verify that it was you who spoke.\n"+
+	"\n"+
+	"<i>Karma</i>:\n"+
+	"  You get karma by receiving +1s from other people. \n"+
+	"  You need 1 karma to post stickers, 2 karma to post images, and 5 karma to post videos.\n"+
+	"  A warning from a moderator will lower your karma. You can end up with negative karma."
+
 }
 
 localization = {}

@@ -13,8 +13,10 @@ from src.globals import *
 class SystemConfig():
 	def __init__(self):
 		self.motd = None
+		self.help = None
 	def defaults(self):
 		self.motd = ""
+		self.help = ""
 
 USER_PROPS = (
 	"id", "username", "realname", "rank", "joined", "left", "lastActive",
@@ -50,7 +52,7 @@ class User():
 			return self.id == other.id
 		return NotImplemented
 	def __str__(self):
-		return "<User id=%d aka %r>" % (self.id, self.getFormattedName())
+		return "%r (%d)" % (self.getFormattedName(), self.id)
 	def defaults(self):
 		self.rank = RANKS.user
 		self.joined = datetime.now()
@@ -58,10 +60,10 @@ class User():
 		self.warnings = 0
 		self.forwardWarned = False #FIX: not yet implemented
 		self.karma = 0
-		self.hideKarma = True
+		self.hideKarma = False
 		self.debugEnabled = False
 		self.salt = str(randint(1000,9999))#currently unused
-		self.tripcodeToggle = True
+		self.tripcodeToggle = False
 	def isJoined(self):
 		return self.left is None
 	def isInCooldown(self):
@@ -77,10 +79,17 @@ class User():
 	def getObfuscatedKarma(self):
 		offset = round(abs(self.karma * 0.2) + 2)
 		return self.karma + randint(0, offset + 1) - offset
+	def getIdLink(self, text=None):
+		return "<a href=\"tg://user?id="+str(self.id)+"\">"+(text.replace("<","&lt;").replace(">","&gt;") if text else str(self.id))+"</a>"
 	def getFormattedName(self):
 		if self.username is not None:
 			return "@" + self.username
-		return self.realname
+		return self.realname or "anon"
+	def getAnonymizedName(self):
+		tag = self.getObfuscatedId()
+		if self.tripcode:
+			tag = self.tripname + self.triphash
+		return tag
 	def getMessagePriority(self):
 		inactive_min = (datetime.now() - self.lastActive) / timedelta(minutes=1)
 		c1 = max(RANKS.values()) - max(self.rank, 0)
@@ -196,12 +205,13 @@ class JSONDatabase(Database):
 		return
 	@staticmethod
 	def _systemConfigToDict(config):
-		return {"motd": config.motd}
+		return {"motd": config.motd, "help": config.help}
 	@staticmethod
 	def _systemConfigFromDict(d):
 		if d is None: return None
 		config = SystemConfig()
 		config.motd = d["motd"]
+		config.help = d["help"] if "help" in d.keys() else ""
 		return config
 	@staticmethod
 	def _userToDict(user):
@@ -220,7 +230,7 @@ class JSONDatabase(Database):
 		if d is None: return None
 		props = ["id", "username", "realname", "rank", "blacklistReason",
 			"warnings", "karma", "hideKarma", "debugEnabled", "tripcodeToggle"]
-		props_d = [("tripcode", None),("tripname", None),("triphash", None)]
+		props_d = [("tripcode", None),("tripname", None),("triphash", None),("tripcodeToggle",False)]
 		dateprops = ["joined", "left", "lastActive", "cooldownUntil", "warnExpiry"]
 		user = User()
 		for prop in props:
@@ -294,12 +304,13 @@ class SQLiteDatabase(Database):
 			self.db.close()
 	@staticmethod
 	def _systemConfigToDict(config):
-		return {"motd": config.motd}
+		return {"motd": config.motd, "help": config.help}
 	@staticmethod
 	def _systemConfigFromDict(d):
 		if len(d) == 0: return None
 		config = SystemConfig()
 		config.motd = d["motd"]
+		config.help = d["help"] if "help" in d.keys() else ""
 		return config
 	@staticmethod
 	def _userToDict(user):
@@ -326,6 +337,12 @@ CREATE TABLE IF NOT EXISTS `system_config` (
 			""".strip())
 			self.db.execute("""
 CREATE TABLE IF NOT EXISTS `whitelist` (
+	`id` BIGINT NOT NULL,
+	PRIMARY KEY (`id`)
+);
+			""".strip())
+			self.db.execute("""
+CREATE TABLE IF NOT EXISTS `blacklist` (
 	`id` BIGINT NOT NULL,
 	PRIMARY KEY (`id`)
 );
@@ -366,8 +383,9 @@ CREATE TABLE IF NOT EXISTS `users` (
 				self.db.execute("ALTER TABLE `users` ADD `salt` TEXT")
 			if not row_exists("users", "tripcodeToggle"):
 				self.db.execute("ALTER TABLE `users` ADD `tripcodeToggle` TINYINT") # FIX: Look up SQL to default to true, test it.
-			if not row_exists("users", "forwardWarned"):
-				self.db.execute("ALTER TABLE `users` ADD `forwardWarned` TINYINT")
+			# These turned out not to be necessary, the bot strips forwards easily.
+			# if not row_exists("users", "forwardWarned"):
+			# 	self.db.execute("ALTER TABLE `users` ADD `forwardWarned` TINYINT")
 	def getUser(self, id=None):
 		if id is None:
 			raise ValueError()
@@ -419,6 +437,27 @@ CREATE TABLE IF NOT EXISTS `users` (
 		if row is None:
 			raise KeyError()
 		return True
+	def addBlacklistedUser(self, id=None, toBlacklist=True): #if a username had been added, it was converted into an ID before coming here.
+		if id is None:
+			raise ValueError()
+		if toBlacklist:
+			sql = "INSERT INTO blacklist(id) VALUES (?)"
+		else:
+			sql = "DELETE FROM blacklist WHERE id = ?"
+		param = str(id).strip().lower()
+		with self.lock:
+			self.db.execute(sql, (param, ))
+	def getBlacklistedUser(self, id=None):
+		if id is None:
+			raise ValueError()
+		sql = "SELECT id FROM blacklist WHERE id = ?"
+		param = str(id).strip().lower()
+		with self.lock:
+			cur = self.db.execute(sql, (param, ))
+			row = cur.fetchone()
+		if row is None:
+			raise KeyError()
+		return True
 	def iterateUserIds(self, order_by=None, order_desc=False):
 		sql = "SELECT `id` FROM users"
 		if order_by:
@@ -442,7 +481,7 @@ CREATE TABLE IF NOT EXISTS `users` (
 			l = list(SQLiteDatabase._userFromRow(row) for row in cur)
 		yield from l
 	def iterateAdmins(self):
-		sql = "SELECT * FROM users WHERE rank = ?"
+		sql = "SELECT * FROM users WHERE rank >= ?"
 		param = RANKS.admin
 		with self.lock:
 			cur = self.db.execute(sql, (param, ))
