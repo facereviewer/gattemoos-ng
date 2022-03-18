@@ -19,9 +19,9 @@ class SystemConfig():
 		self.help = ""
 
 USER_PROPS = (
-	"id", "username", "realname", "rank", "joined", "left", "lastActive",
+	"id", "username", "realname", "rank", "joined", "join_attempts", "left", "lastActive",
 	"cooldownUntil", "blacklistReason", "warnings", "warnExpiry", "forwardWarned", "karma",
-	"hideKarma", "debugEnabled", "tripcode", "tripname", "triphash", "salt", "tripcodeToggle"
+	"hideKarma", "debugEnabled", "tripcode", "tripname", "triphash", "salt", "tripcodeToggle", "muzzled"
 )
 
 class User():
@@ -31,6 +31,7 @@ class User():
 		self.username = None # str?
 		self.realname = None # str
 		self.rank = None # int
+		self.join_attempts = None # int
 		self.joined = None # datetime
 		self.left = None # datetime?
 		self.lastActive = None # datetime
@@ -47,6 +48,7 @@ class User():
 		self.triphash = None # str?
 		self.salt = None # str?
 		self.tripcodeToggle = None # bool
+		self.muzzled = None # bool
 	def __eq__(self, other):
 		if isinstance(other, User):
 			return self.id == other.id
@@ -55,6 +57,7 @@ class User():
 		return "%r (%d)" % (self.getFormattedName(), self.id)
 	def defaults(self):
 		self.rank = RANKS.user
+		self.join_attempts = 0
 		self.joined = datetime.now()
 		self.lastActive = self.joined
 		self.warnings = 0
@@ -64,6 +67,7 @@ class User():
 		self.debugEnabled = False
 		self.salt = str(randint(1000,9999))#currently unused
 		self.tripcodeToggle = False
+		self.muzzled = False
 	def isJoined(self):
 		return self.left is None
 	def isInCooldown(self):
@@ -106,6 +110,8 @@ class User():
 			self.rank = RANKS.banned
 		else:
 			self.rank = RANKS.user
+	def setMuzzled(self, toMuzzle=True):
+		self.muzzled = toMuzzle
 	def addWarning(self):
 		if self.warnings < len(COOLDOWN_TIME_BEGIN):
 			cooldownTime = COOLDOWN_TIME_BEGIN[self.warnings]
@@ -215,9 +221,9 @@ class JSONDatabase(Database):
 		return config
 	@staticmethod
 	def _userToDict(user):
-		props = ["id", "username", "realname", "rank", "joined", "left",
+		props = ["id", "username", "realname", "rank", "join_attempts", "joined", "left",
 			"lastActive", "cooldownUntil", "blacklistReason", "warnings",
-			"warnExpiry", "forwardWarned", "karma", "hideKarma", "debugEnabled", "tripcode","tripname","triphash","salt", "tripcodeToggle"]
+			"warnExpiry", "forwardWarned", "karma", "hideKarma", "debugEnabled", "tripcode","tripname","triphash","salt", "tripcodeToggle", "muzzled"]
 		d = {}
 		for prop in props:
 			value = getattr(user, prop)
@@ -230,7 +236,7 @@ class JSONDatabase(Database):
 		if d is None: return None
 		props = ["id", "username", "realname", "rank", "blacklistReason",
 			"warnings", "karma", "hideKarma", "debugEnabled", "tripcodeToggle"]
-		props_d = [("tripcode", None),("tripname", None),("triphash", None),("tripcodeToggle",False)]
+		props_d = [("join_attempts",0),("tripcode", None),("tripname", None),("triphash", None),("tripcodeToggle",False),("muzzled",False)]
 		dateprops = ["joined", "left", "lastActive", "cooldownUntil", "warnExpiry"]
 		user = User()
 		for prop in props:
@@ -353,6 +359,7 @@ CREATE TABLE IF NOT EXISTS `users` (
 	`username` TEXT,
 	`realname` TEXT NOT NULL,
 	`rank` INTEGER NOT NULL,
+	`join_attempts` INTEGER NOT NULL,
 	`joined` TIMESTAMP NOT NULL,
 	`left` TIMESTAMP,
 	`lastActive` TIMESTAMP NOT NULL,
@@ -369,6 +376,7 @@ CREATE TABLE IF NOT EXISTS `users` (
 	`triphash` TEXT,
 	`salt` TEXT,
 	`tripcodeToggle` TINYINT NOT NULL,
+	`muzzled` TINYINT NOT NULL,
 	PRIMARY KEY (`id`)
 );
 			""".strip())
@@ -382,7 +390,11 @@ CREATE TABLE IF NOT EXISTS `users` (
 			if not row_exists("users", "salt"):
 				self.db.execute("ALTER TABLE `users` ADD `salt` TEXT")
 			if not row_exists("users", "tripcodeToggle"):
-				self.db.execute("ALTER TABLE `users` ADD `tripcodeToggle` TINYINT") # FIX: Look up SQL to default to true, test it.
+				self.db.execute("ALTER TABLE `users` ADD `tripcodeToggle` TINYINT DEFAULT '0'")
+			if not row_exists("users", "join_attempts"):
+				self.db.execute("ALTER TABLE `users` ADD `join_attempts` INTEGER DEFAULT '0'")
+			if not row_exists("users", "muzzled"):
+				self.db.execute("ALTER TABLE `users` ADD `muzzled` TINYINT") # FIX: Look up SQL to default to true, test it.
 			# These turned out not to be necessary, the bot strips forwards easily.
 			# if not row_exists("users", "forwardWarned"):
 			# 	self.db.execute("ALTER TABLE `users` ADD `forwardWarned` TINYINT")

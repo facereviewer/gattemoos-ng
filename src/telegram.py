@@ -1,4 +1,6 @@
+from datetime import datetime
 import telebot
+from telebot import apihelper
 import logging
 import time
 import json
@@ -8,6 +10,7 @@ import traceback
 
 import src.core as core
 import src.replies as rp
+from src.database import User
 from src.util import MutablePriorityQueue
 from src.globals import *
 
@@ -19,7 +22,8 @@ HIDE_FORWARD_FROM = set([
 	"anonymous_forwarder_nashenasbot", "anonymous_forward_bot", "mirroring_bot",
 	"anonymizbot", "ForwardsCoverBot", "anonymousmcjnbot", "MirroringBot",
 	"anonymousforwarder_bot", "anonymousForwardBot", "anonymous_forwarder_bot",
-	"anonymousforwardsbot", "HiddenlyBot", "ForwardCoveredBot",
+	"anonymousforwardsbot", "HiddenlyBot", "ForwardCoveredBot", "anonym2bot",
+	"AntiForwardedBot", "noforward_bot", "Anonymous_telegram_bot",
 ])
 VENUE_PROPS = ("title", "address", "foursquare_id", "foursquare_type", "google_place_id", "google_place_type")
 
@@ -37,13 +41,16 @@ tripcode_toggle = None
 allow_edits = None
 media_allowed = None
 media_karma = None
+karma_needed = True
+stored_key = None
 
 def init(config, _db, _ch):
-	global bot, db, ch, message_queue, allow_documents, linked_network, tripcode_toggle, allow_edits, media_allowed, media_karma
+	global bot, db, ch, message_queue, allow_documents, linked_network, tripcode_toggle, allow_edits, media_allowed, media_karma, karma_needed, VERSION, stored_key
 	if config["bot_token"] == "":
 		logging.error("No telegram token specified.")
 		exit(1)
 
+	stored_key = config["bot_token"]
 	logging.getLogger("urllib3").setLevel(logging.WARNING) # very noisy with debug otherwise
 	telebot.apihelper.READ_TIMEOUT = 20
 
@@ -58,8 +65,11 @@ def init(config, _db, _ch):
 	linked_network = config.get("linked_network")
 	tripcode_toggle = config.get("tripcode_toggle",False)
 	media_allowed = config.get("media_allowed",False)
-	media_karma = config.get("media_karma",[0,0,0])
+	media_karma = config.get("media_karma",["no",0,0])
+	if str(media_karma[0]) == "no":
+		karma_needed = False
 	allow_edits = config.get("allow_edits", False)
+	VERSION = config.get("vanity_version", "") or VERSION
 	if linked_network is not None and not isinstance(linked_network, dict):
 		logging.error("Wrong type for 'linked_network'")
 		exit(1)
@@ -79,8 +89,7 @@ def init(config, _db, _ch):
 	
 	# Trimmed command list
 	cmds = [
-		"start", "stop", "users", "info", "help", "rules", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "demote", "warn", "delete", "remove", "uncooldown", "whitelist", "blacklist", "unblacklist", "exposeto", "tripcode", "tripcodetoggle", "ban", "unban", "unwhitelist", "t", "tsign", "lock", "cleanup"
-		#FIX: /unlock?
+		"start", "stop", "users", "info", "help", "rules", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "demote", "warn", "delete", "remove", "uncooldown", "whitelist", "blacklist", "unblacklist", "exposeto", "tripcode", "tripcodetoggle", "ban", "unban", "unwhitelist", "t", "tsign", "lock", "unlock", "cleanup", "muzzle", "unmuzzle", "reset", "lockdown"
 	]
 	for c in cmds: # maps /<c> to the function cmd_<c>
 		c = c.lower()
@@ -267,6 +276,7 @@ def send_answer(ev, m, reply_to=False):
 			try:
 				send_to_single_inner(ev.chat.id, m, reply_to=reply_to)
 			except telebot.apihelper.ApiException as e:
+				logging.info("Send failed. ID: %d",ev.chat.id)
 				retry = check_telegram_exc(e, None)
 				if retry:
 					continue
@@ -426,6 +436,8 @@ class QueueItem():
 			self.func()
 		except Exception as e:
 			logging.exception("Exception raised during queued message")
+			logging.info("Stuff about e: "+str(e))
+			#FIX: Look for common errors like Handshake timeouts
 
 def get_priority_for(user):
 	#logging.info("\n"+str(type(user)))
@@ -529,7 +541,8 @@ def resend_message(chat_id, ev, reply_to=None, force_caption: FormattedMessage=N
 # send a message `ev` (multiple types possible) to Telegram ID `chat_id`
 # returns the sent Telegram message
 def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None):
-	if isinstance(ev, rp.Reply):
+	
+	if isinstance(ev, rp.Reply): # System message?
 		kwargs2 = {}
 		if reply_to is not None:
 			kwargs2["reply_to_message_id"] = reply_to
@@ -544,14 +557,16 @@ def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None):
 			# kwargs2["reply_markup"] = markup
 			kwargs2["reply_markup"] = json.dumps({"inline_keyboard": ev.buttons})
 		return bot.send_message(chat_id, rp.formatForTelegram(ev), parse_mode="HTML", **kwargs2)
-	elif isinstance(ev, FormattedMessage):
+	elif isinstance(ev, FormattedMessage): # Tripcode
 		kwargs2 = {}
 		if reply_to is not None:
 			kwargs2["reply_to_message_id"] = reply_to
 		if ev.html:
 			kwargs2["parse_mode"] = "HTML"
+
 		return bot.send_message(chat_id, ev.content, **kwargs2)
 
+	# Non-tripcode, but maybe media.
 
 	return resend_message(chat_id, ev, reply_to=reply_to, force_caption=force_caption)
 
@@ -560,18 +575,14 @@ def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None):
 # `reply_msid` can be a msid of the message that will be replied to
 # `force_caption` can be a FormattedMessage to set the caption for resent media
 def send_to_single(ev, msid, user, *, reply_msid=None, force_caption=None):
-	# set reply_to_message_id if applicable
-	reply_to = None
-	if reply_msid is not None:
-		reply_to = ch.lookupMapping(user.id, msid=reply_msid)
-
-	# if reply_to is None:
-	# 	return
-
 	user_id = user.id
 	def f():
 		while True:
 			try:
+				# set reply_to_message_id if applicable
+				reply_to = None
+				if reply_msid is not None:
+					reply_to = ch.lookupMapping(user.id, msid=reply_msid)
 				ev2 = send_to_single_inner(user_id, ev, reply_to, force_caption)
 			#FIX: This is because of my deletion code
 			except telebot.apihelper.ApiTelegramException as e:
@@ -583,7 +594,9 @@ def send_to_single(ev, msid, user, *, reply_msid=None, force_caption=None):
 				return
 			break
 		ch.saveMapping(user_id, msid, ev2.message_id)
+
 	put_into_queue(user, msid, f)
+
 
 # look at given Exception `e`, force-leave user if bot was blocked
 # returns True if message sending should be retried
@@ -609,7 +622,7 @@ def check_telegram_exc(e, user_id):
 
 # Event receiver: handles all things the core decides to do "on its own":
 # e.g. karma notifications, deletion of messages, exposed messages
-# This does *not* include direct replies to commands or relaying messages.
+# This does *not* include direct replies to commands or relaying of messages.
 
 @core.registerReceiver
 class MyReceiver(core.Receiver):
@@ -628,12 +641,25 @@ class MyReceiver(core.Receiver):
 	@staticmethod
 	def delete(msid, user_id=None):
 		tmp = ch.getMessage(msid)
-		logging.info("msid: "+str(msid))
-		except_id = None #if tmp is None else tmp.user_id
+		# The following stops it from being deleted on the original user's end.
+		#except_id = None if tmp is None else tmp.user_id 
+
+		#FIX: If it's something like modsay, delete. If user message, don't.
 		message_queue.delete(lambda item, msid=msid: item.msid == msid)
 		# FIXME: there's a hard to avoid race condition here:
 		# if a message is currently being sent, but finishes after we grab the
 		# message ids it will never be deleted
+
+		# When the system deletes the user's message without their input
+		# (Just used for sensitive data right now, maybe polls)
+		# FIX: This is different from stock SecretLounge, and doesn't work unless the user ID is passed in, even though it's not needed. Uh, just don't require it? Or pull it from the msid?
+		try:
+			id = ch.lookupMapping(user_id, msid=msid)
+			if id is None:
+				bot.delete_message(user_id, msid)
+		except telebot.apihelper.ApiException as e:
+			logging.info("Stock Delete failed. ID: %d",user_id)
+
 		for user in db.iterateUsers():
 			if not user.isJoined():
 				continue
@@ -641,23 +667,18 @@ class MyReceiver(core.Receiver):
 			# 	continue
 
 			id = ch.lookupMapping(user.id, msid=msid)
-			if id is None and user_id is not None:
-				try:
-					bot.delete_message(user_id, msid)
-					return
-				except telebot.apihelper.ApiException as e:
-					user_id = None
+			if id is None:
+				continue
 			user_id = user.id
 			def f(user_id=user_id, id=id):
 				while True:
 					try:
-						if id is not None:
-							bot.delete_message(user_id, id)
-					#FIX: This is because of my deletion code
+						bot.delete_message(user_id, id)
 					except telebot.apihelper.ApiTelegramException as e:
-						logging.info("API Error. Deletion code?")
+						logging.info("API Error. Already deleted.")
 						return
 					except telebot.apihelper.ApiException as e:
+						logging.info("Delete failed 2. ID: %d",user_id)
 						retry = check_telegram_exc(e, None)
 						if retry:
 							continue
@@ -665,6 +686,8 @@ class MyReceiver(core.Receiver):
 					break
 			# queued message has msid=None here since this is a deletion, not a message being sent
 			put_into_queue(user, None, f)
+		# drop the mappings for this message so the id doesn't end up used e.g. for replies
+		ch.deleteMappings(msid)
 	@staticmethod
 	def stop_invoked(user, delete_out):
 		message_queue.delete(lambda item, user_id=user.id: item.user_id == user_id)
@@ -680,11 +703,20 @@ class MyReceiver(core.Receiver):
 			return cm.user_id == user.id
 		message_queue.delete(f)
 
+
+#dict list parse except
+#json.dumps(msg, default=lambda o: o.__dict__, sort_keys=True, indent=4)
+
+
+
+
+
+
+
 ####
 
 cmd_start = wrap_core(core.user_join)
 cmd_stop = wrap_core(core.user_leave)
-
 
 cmd_users = wrap_core(core.get_users)
 
@@ -865,7 +897,7 @@ def cmd_blacklist(ev, arg):
 	messagetext = ev.reply_to_message.text
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 	if reply_msid is None:
-		send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
 	cm = ch.getMessage(reply_msid)
 
 	return send_answer(ev, core.blacklist_user(c_user, cm.user_id, arg, msid=reply_msid, text=messagetext), True)
@@ -904,11 +936,28 @@ def plusone(ev):
 		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
 	return send_answer(ev, core.give_karma(c_user, reply_msid), True)
 
+@takesArgument(optional=True, isUsername=True)
+def cmd_reset(ev, arg):
+	c_user = UserContainer(ev.from_user)
+	if arg:
+		return send_answer(ev, core.reset_karma(c_user, arg))
+
+	if ev.reply_to_message is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+
+	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+	if reply_msid is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+	cm = ch.getMessage(reply_msid)
+
+	return send_answer(ev, core.reset_karma(c_user, cm.user_id), True)
 
 # This is the entry point for handling messages from Telegram.
 # It just splits off some commands or tripcoded media, then goes to inner.
 def relay(ev):
 	# handle commands and karma giving
+	if ev.chat.id <0:
+		return
 	if ev.content_type == "text":
 		if ev.text.startswith("/"):
 			c, _ = split_command(ev.text)
@@ -955,6 +1004,8 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 
 			formatter_tripcoded_message(user, fmt)
 		fmt = fmt.build()
+		if fmt is not None:
+			fmt.from_user = user
 		# either replace whole message or just the caption
 		if ev.content_type == "text":
 			ev_tosend = fmt or ev_tosend
@@ -977,7 +1028,7 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 		return
 
 	# FIX: This is ugly
-	if user.rank < RANKS.admin:
+	if user.rank < RANKS.admin and karma_needed:
 		if ev.content_type in ["sticker"]:
 			if media_karma[MEDIA.stickers] < 0:
 				core._push_system_message(rp.Reply(rp.types.CUSTOM,text="<i>Sticker posting has been disabled.</i>"), who=user)
@@ -1016,13 +1067,15 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 
 		poll = bot.send_poll(user.id, question=ev.poll.question, options=ev.poll.options, **kwargs2)
 		msid = core.prepare_user_message(user, calc_spam_score(ev))
-		ev_tosend = poll
+		ev = poll
+		ev_tosend = ev
+		ev_tosend.from_user = user
 
 	for user2 in db.iterateUsers():
 		if not user2.isJoined():
 			continue
 		if user2 == user and not user.debugEnabled:
-			ch.saveMapping(user.id, msid, ev_tosend.message_id)
+			ch.saveMapping(user.id, msid, ev.message_id)
 			continue
 
 		send_to_single(ev_tosend, msid, user2,
@@ -1064,6 +1117,53 @@ def cmd_lock(ev):
 
 	send_answer(ev, core.lock_message(c_user, reply_msid, text=messagetext), True)
 
+def cmd_unlock(ev):
+	c_user = UserContainer(ev.from_user)
+
+	if ev.reply_to_message is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+
+	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+
+	if reply_msid is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+
+	send_answer(ev, core.unlock_message(c_user, reply_msid), True)
+
+
+@takesArgument(optional=True, isUsername=True)
+def cmd_muzzle(ev, arg):
+	c_user = UserContainer(ev.from_user)
+	if arg:
+		return send_answer(ev, core.muzzle_user(c_user, arg))
+
+	if ev.reply_to_message is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+
+	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+	if reply_msid is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+	cm = ch.getMessage(reply_msid)
+
+	return send_answer(ev, core.muzzle_user(c_user, cm.user_id), True)
+
+@takesArgument(optional=True, isUsername=True)
+def cmd_unmuzzle(ev, arg):
+	c_user = UserContainer(ev.from_user)
+	if arg:
+		return send_answer(ev, core.muzzle_user(c_user, arg, toMuzzle=False))
+
+	if ev.reply_to_message is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+
+	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+	if reply_msid is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+	cm = ch.getMessage(reply_msid)
+
+	return send_answer(ev, core.muzzle_user(c_user, cm.user_id, toMuzzle=False), True)
+
+
 @takesArgument(optional=True, isUsername=True)
 def cmd_cleanup(ev, arg):
 	c_user = UserContainer(ev.from_user)
@@ -1077,14 +1177,26 @@ def cmd_cleanup(ev, arg):
 
 	return send_answer(ev, core.cleanup_user(c_user, user_id), True)
 
+@takesArgument(optional=True)
+def cmd_lockdown(ev, arg):
+	c_user = UserContainer(ev.from_user)
+	if arg:
+		return send_answer(ev, core.engage_lockdown(c_user, arg))
+	return send_answer(ev, core.engage_lockdown(c_user), True)
+
 
 
 cmd_t = cmd_tsign # alias
+cmd_fetch = cmd_info # alias
 
 cmd_ban = cmd_blacklist # alias
 cmd_unban = cmd_unblacklist # alias
 
 cmd_rules = cmd_motd # alias #FIX: make a secondary MOTD-like thing in the DB for rules.
+
+# FIX: Make the command results reply to the message instead of to your command, if there's a reply_msid.
+
+
 
 # @takesArgument()
 # def cmd_me(ev, arg):

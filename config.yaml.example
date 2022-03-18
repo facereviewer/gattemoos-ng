@@ -40,3 +40,6 @@ media_allowed: true
 #  bar: barchatbot
 # alternatively the map can also be loaded from another YAML file using this syntax
 #linked_network: "./somewhere/bots.yml"
+
+# Random other options
+#vanity_version: "1.8" # Changes the version number: "secretlounge-ng v_____"

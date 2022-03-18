@@ -39,7 +39,7 @@ def dump(obj, name=None, r=False):
 			print("%s%s = %r" % (name, e, ev))
 
 # Program version
-VERSION = "1.7"
+VERSION = "1.8"
 
 # Ranks
 RANKS = Enum({
@@ -65,7 +65,7 @@ WARN_EXPIRE_HOURS = 24*7
 
 # Karma related
 KARMA_PLUS_ONE = 1
-KARMA_WARN_PENALTY = 10
+KARMA_WARN_PENALTY = 7
 
 # Spam limits
 SPAM_LIMIT = 6

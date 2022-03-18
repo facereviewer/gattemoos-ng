@@ -146,7 +146,6 @@ format_strs = {
 	types.ERR_NO: em("Actually no"),
 	types.ERR_NO_EDITING: em("Edits will not be seen by other members."),
 	types.ERR_COMMAND_DISABLED: em("This command has been disabled."),
-	#	types.ERR_ADMIN_SEARCH: em("Only an admin can search by username!"), #AWOO
 	types.ERR_ADMIN_SEARCH: em("Please only search by tripcode or OID."),
 	types.ERR_NO_REPLY: em("You need to reply to a message to use this command."),
 	types.ERR_NOT_IN_CACHE: em("Message not found in cache... (36h passed or bot was restarted)"),
@@ -189,19 +188,20 @@ format_strs = {
 		( " (one warning will be removed on {warnExpiry!t})" if warnings > 0 else "" ) + ", "+
 		"<b>cooldown</b>: "+
 		( cooldown and "yes, until {cooldown!t}" or "no" ),
-	types.USER_INFO_MOD: lambda cooldown, **_:
+	types.USER_INFO_MOD: lambda cooldown, muzzled, **_:
 		"<b>id</b>: {id}, <b>name</b>: {username!x}\n<b>rank</b>: {rank_i} ({rank}), "+
 		"<b>karma</b>: {karma}\n"+
 		"<b>cooldown</b>: "+
-		( cooldown and "yes, until {cooldown!t}" or "no" ),
+		( cooldown and "yes, until {cooldown!t}" or "no" ) + 
+		( "\n<i>muzzled</i>" if muzzled else ""),
 	types.USERS_INFO: "<b>{count}</b> <i>users</i>",
 	types.USERS_INFO_EXTENDED:
 		"<b>{active}</b> <i>active</i>, {inactive} <i>inactive and</i> "+
 		"{blacklisted} <i>blacklisted users</i> (<i>total</i>: {total})",
 	types.POLL: "Your poll has been forwarded anonymously.",
 
-	types.PROGRAM_START: "<b>Secret Lounge has restarted.</b>\nsecretlounge-ng vZ.o.o",
-	types.PROGRAM_VERSION: "secretlounge-ng vZ.o.o",
+	types.PROGRAM_START: "<b>Secret Lounge has restarted.</b>\nsecretlounge-ng v{version}",
+	types.PROGRAM_VERSION: "secretlounge-ng v{version}",
 	types.HELP_MODERATOR:
 		"<i>Moderators can use the following commands</i>:\n"+
 		"  /modhelp - show this text\n"+
@@ -210,7 +210,7 @@ format_strs = {
 		"<i>Or reply to a message and use</i>:\n"+
 		"  /info - get info about the user that sent this message\n"+
 		"  /warn - warn the user that sent this message (cooldown)\n"+
-		"  /lock - stops people from exposing themselves through that message\n"+
+		"  /lock - stops people from exposing themselves through that message (or /unlock)\n"+
 		"  /blacklist [reason] - blacklist the user who sent this message (can also use /ban)\n"+
 		"  /delete - delete a message and warn the user\n"+
 		"  /remove - delete a message without a cooldown/warning\n"+
@@ -226,11 +226,13 @@ format_strs = {
 		"  /mod &lt;username&gt; - promote a user to the moderator rank\n"+
 		"  /admin &lt;username&gt; - promote a user to the admin rank\n"+
 		"  /demote - demote an admin or mod to user rank\n"+
+		"  /muzzle - restricts karma and exposing (or /unmuzzle)\n" +
+		"  /reset - resets a user's karma to 0\n" +
 		"\n"+
 		"<i>Or reply to a message and use</i>:\n"+
 		"  /unblacklist - show a list of users to unban (can also use /unban)",
 	types.UNUSED_HELP_COMMAND:#this could be hard-coded like so, instead of customized in the /help command.
-	"/help <i>You can use the following commands</i>:\n"+
+	"<i>You can use the following commands</i>:\n"+	
 	"  /stop — Stops the bot.\n"+
 	"  /start — Restarts the bot.\n"+
 	"  /users — Shows some stats.\n"+
