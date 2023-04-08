@@ -484,6 +484,8 @@ CREATE TABLE IF NOT EXISTS `users` (
 	def iterateUsers(self, order_by=None, order_desc=False):
 		sql = "SELECT * FROM users"
 		if order_by:
+			if not order_by in USER_PROPS:
+				raise ValueError()
 			sql += " ORDER BY ?" + (" DESC" if order_desc else "")
 		with self.lock:
 			if order_by:

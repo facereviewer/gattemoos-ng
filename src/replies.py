@@ -73,6 +73,7 @@ types = NumericEnum([
 	"ERR_ALREADY_UPVOTED",
 	"ERR_UPVOTE_OWN_MESSAGE",
 	"ERR_SPAMMY",
+	"ERR_SIGN_PRIVACY",
 	"ERR_SPAMMY_TRIPCODE",
 	"ERR_INVALID_TRIP_FORMAT",
 	"ERR_NO_TRIPCODE",
@@ -168,6 +169,7 @@ format_strs = {
 	types.ERR_ALREADY_UPVOTED: em("You have already upvoted this message."),
 	types.ERR_UPVOTE_OWN_MESSAGE: em("You can't upvote your own message."),
 	types.ERR_SPAMMY: em("Your message has not been sent. Avoid sending messages too fast, try again later."),
+	types.ERR_SIGN_PRIVACY: em("Your account privacy settings prevent usage of the sign feature. Enable linked forwards first."),
 	types.ERR_SPAMMY_TRIPCODE: em("Your tripcode cannot be set for another {time_left} hours."),
 	types.ERR_INVALID_TRIP_FORMAT:
 		em("Given tripcode is not valid, the format is \n")+

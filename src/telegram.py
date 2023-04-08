@@ -24,8 +24,14 @@ HIDE_FORWARD_FROM = set([
 	"anonymousforwarder_bot", "anonymousForwardBot", "anonymous_forwarder_bot",
 	"anonymousforwardsbot", "HiddenlyBot", "ForwardCoveredBot", "anonym2bot",
 	"AntiForwardedBot", "noforward_bot", "Anonymous_telegram_bot",
+	"Forwards_Cover_Bot", "ForwardsHideBot", "ForwardsCoversBot",
+	"NoForwardsSourceBot", "AntiForwarded_v2_Bot", "ForwardCoverzBot",
 ])
 VENUE_PROPS = ("title", "address", "foursquare_id", "foursquare_type", "google_place_id", "google_place_type")
+
+# Send-to types, who to reply to
+EVENT = 1
+PARENT = 2
 
 # module variables
 bot = None
@@ -43,6 +49,7 @@ media_allowed = None
 media_karma = None
 karma_needed = True
 stored_key = None
+mute = False
 
 def init(config, _db, _ch):
 	global bot, db, ch, message_queue, allow_documents, linked_network, tripcode_toggle, allow_edits, media_allowed, media_karma, karma_needed, VERSION, stored_key
@@ -89,7 +96,7 @@ def init(config, _db, _ch):
 	
 	# Trimmed command list
 	cmds = [
-		"start", "stop", "users", "info", "help", "rules", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "demote", "warn", "delete", "remove", "uncooldown", "whitelist", "blacklist", "unblacklist", "exposeto", "tripcode", "tripcodetoggle", "ban", "unban", "unwhitelist", "t", "tsign", "lock", "unlock", "cleanup", "muzzle", "unmuzzle", "reset", "lockdown"
+		"start", "stop", "users", "info", "help", "rules", "motd", "toggledebug", "togglekarma", "version", "source", "modhelp", "adminhelp", "modsay", "adminsay", "mod", "admin", "demote", "warn", "delete", "remove", "uncooldown", "whitelist", "blacklist", "unblacklist", "exposeto", "tripcode", "tripcodetoggle", "ban", "unban", "unwhitelist", "t", "tsign", "lock", "unlock", "cleanup", "muzzle", "unmuzzle", "reset", "lockdown", "mute"
 	]
 	for c in cmds: # maps /<c> to the function cmd_<c>
 		c = c.lower()
@@ -152,7 +159,7 @@ def run():
 			# you're not supposed to call .polling() more than once but I'm left with no choice
 			logging.warning("%s while polling Telegram, retrying.", type(e).__name__)
 			#logging.error(traceback.print_exc())
-			time.sleep(1)
+			time.sleep(3)
 
 def register_tasks(sched):
 	# cache expiration
@@ -175,6 +182,8 @@ def register_tasks(sched):
 def start_edit_listener():
 	@bot.edited_message_handler(func=lambda msg: True)
 	def callback_query(ev):
+		if ev.chat.id < 0:
+			return
 		c_user = db.getUser(id=ev.from_user.id)
 
 		if not allow_edits:
@@ -252,17 +261,17 @@ def removeSensitiveInfo(ev, arg):
 def getUserIdFromReply(ev):
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), reply_to=EVENT)
 	cm = ch.getMessage(reply_msid)
 	return cm.user_id
 	
-def wrap_core(func, reply_to=False):
+def wrap_core(func, reply_to=None):
 	def f(ev):
 		m = func(UserContainer(ev.from_user))
 		send_answer(ev, m, reply_to=reply_to)
 	return f
 
-def send_answer(ev, m, reply_to=False):
+def send_answer(ev, m, reply_to=None):
 	if m is None:
 		return
 	elif isinstance(m, list): #forwarding a bunch of messages
@@ -270,7 +279,10 @@ def send_answer(ev, m, reply_to=False):
 			send_answer(ev, m2, reply_to)
 		return
 
-	reply_to = ev.message_id if reply_to else None
+	if reply_to in (EVENT, PARENT):
+		reply_to = ev.message_id
+	if reply_to == PARENT and ev.reply_to_message is not None:
+		reply_to = ev.reply_to_message.message_id
 	def f(ev=ev, m=m):
 		while True:
 			try:
@@ -488,6 +500,7 @@ def resend_message(chat_id, ev, reply_to=None, force_caption: FormattedMessage=N
 	kwargs = {}
 	if reply_to is not None:
 		kwargs["reply_to_message_id"] = reply_to
+		kwargs["allow_sending_without_reply"] = True
 	if ev.content_type in CAPTIONABLE_TYPES:
 		if force_caption is not None:
 			kwargs["caption"] = force_caption.content
@@ -546,6 +559,7 @@ def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None):
 		kwargs2 = {}
 		if reply_to is not None:
 			kwargs2["reply_to_message_id"] = reply_to
+			kwargs2["allow_sending_without_reply"] = True
 		if ev.type == rp.types.CUSTOM:
 			kwargs2["disable_web_page_preview"] = True
 		if not ev.buttons == [[]]:
@@ -561,6 +575,7 @@ def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None):
 		kwargs2 = {}
 		if reply_to is not None:
 			kwargs2["reply_to_message_id"] = reply_to
+			kwargs2["allow_sending_without_reply"] = True
 		if ev.html:
 			kwargs2["parse_mode"] = "HTML"
 
@@ -576,24 +591,46 @@ def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None):
 # `force_caption` can be a FormattedMessage to set the caption for resent media
 def send_to_single(ev, msid, user, *, reply_msid=None, force_caption=None):
 	user_id = user.id
+	if reply_msid is not None:
+		reply_to = ch.lookupMapping(user.id, msid=reply_msid)
+		if reply_to is None:
+			core._push_system_message(rp.Reply(rp.types.CUSTOM,text="<i>This message was sent before you\narrived, or no longer exists.</i>"), who=user, msid=reply_msid)
+			logging.info(f"reply associated with {reply_msid}")
 	def f():
 		while True:
+			count = 1
 			try:
 				# set reply_to_message_id if applicable
 				reply_to = None
 				if reply_msid is not None:
 					reply_to = ch.lookupMapping(user.id, msid=reply_msid)
+					if reply_to is None:
+						logging.info("Likely replying to a deleted message.")
+					elif reply_to == -1:
+						logging.info(f"User {user.id} still had {msid} as -1 at ToF.")
 				ev2 = send_to_single_inner(user_id, ev, reply_to, force_caption)
 			#FIX: This is because of my deletion code
 			except telebot.apihelper.ApiTelegramException as e:
+				logging.info(f"Error sending single: {e}")
+				if str(e).find("user is deactivated") >= 0:
+					core.force_user_leave(user.id)
+				if str(e).find("bot was blocked") >= 0:
+					core.force_user_leave(user.id)
 				return
 			except telebot.apihelper.ApiException as e:
 				retry = check_telegram_exc(e, user_id)
-				if retry:
+				if retry and count < 5:
+					count += 1
+					logging.info(f"Bad thing, retrying... {e}")
+					time.sleep(1)
 					continue
 				return
 			break
 		ch.saveMapping(user_id, msid, ev2.message_id)
+
+		time.sleep(0.1)
+		# pauses after sending, might help with rate limits.
+
 
 	put_into_queue(user, msid, f)
 
@@ -636,6 +673,9 @@ class MyReceiver(core.Receiver):
 				continue
 			if user == except_who and not user.debugEnabled:
 				continue
+			# Stub mapping so that instant sends can be told that there is an EXPECTED msid involved, even if there's none now.
+			# Fix: some places should probably check if msid is -1 and throw a "not found" anyway.
+			ch.saveMapping(user.id, msid, -1)
 			send_to_single(m, msid, user, reply_msid=reply_msid)
 
 	@staticmethod
@@ -655,14 +695,13 @@ class MyReceiver(core.Receiver):
 		# FIX: This is different from stock SecretLounge, and doesn't work unless the user ID is passed in, even though it's not needed. Uh, just don't require it? Or pull it from the msid?
 		try:
 			id = ch.lookupMapping(user_id, msid=msid)
-			if id is None:
-				bot.delete_message(user_id, msid)
+			bot.delete_message(user_id, msid)
 		except telebot.apihelper.ApiException as e:
 			logging.info("Stock Delete failed. ID: %d",user_id)
 
 		for user in db.iterateUsers():
-			if not user.isJoined():
-				continue
+			# if not user.isJoined():
+			# 	continue
 			# if user.id == except_id:
 			# 	continue
 
@@ -671,7 +710,9 @@ class MyReceiver(core.Receiver):
 				continue
 			user_id = user.id
 			def f(user_id=user_id, id=id):
+				count = 0
 				while True:
+					count += 1
 					try:
 						bot.delete_message(user_id, id)
 					except telebot.apihelper.ApiTelegramException as e:
@@ -680,7 +721,10 @@ class MyReceiver(core.Receiver):
 					except telebot.apihelper.ApiException as e:
 						logging.info("Delete failed 2. ID: %d",user_id)
 						retry = check_telegram_exc(e, None)
-						if retry:
+						if count >= 10:
+							logging.info(f"Delete failed because of long wait. {user_id}:{id}")
+							return
+						if retry and count < 10:
 							continue
 						return
 					break
@@ -715,10 +759,17 @@ class MyReceiver(core.Receiver):
 
 ####
 
-cmd_start = wrap_core(core.user_join)
+#cmd_start = wrap_core(core.user_join)
+def cmd_start(ev):
+	message = core.user_join(UserContainer(ev.from_user))
+	return send_answer(ev, message)
+
+
 cmd_stop = wrap_core(core.user_leave)
 
+
 cmd_users = wrap_core(core.get_users)
+
 
 @takesArgument(optional=True, isUsername=True)
 def cmd_info(ev, arg):
@@ -727,14 +778,15 @@ def cmd_info(ev, arg):
 		return send_answer(ev, core.get_info_mod(c_user, arg))
 
 	if ev.reply_to_message is None:
-		return send_answer(ev, core.get_info(c_user), True)
+		return send_answer(ev, core.get_info(c_user), reply_to=EVENT)
 
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), reply_to=EVENT)
 	cm = ch.getMessage(reply_msid)
 
-	return send_answer(ev, core.get_info_mod(c_user, cm.user_id), True)
+	return send_answer(ev, core.get_info_mod(c_user, cm.user_id), reply_to=PARENT)
+
 
 # FIX: Could add a special method that looks for extra_{something} and create as many custom commands as needed.
 @takesArgument(optional=True)
@@ -742,18 +794,18 @@ def cmd_help(ev, arg):
 	c_user = UserContainer(ev.from_user)
 
 	if arg == "":
-		send_answer(ev, core.get_help(c_user), reply_to=True)
+		send_answer(ev, core.get_help(c_user), reply_to=EVENT)
 	else:
-		send_answer(ev, core.set_help(c_user, arg), reply_to=True)
+		send_answer(ev, core.set_help(c_user, arg), reply_to=EVENT)
 
 @takesArgument(optional=True)
 def cmd_motd(ev, arg):
 	c_user = UserContainer(ev.from_user)
 
 	if arg == "":
-		send_answer(ev, core.get_motd(c_user), reply_to=True)
+		send_answer(ev, core.get_motd(c_user), reply_to=EVENT)
 	else:
-		send_answer(ev, core.set_motd(c_user, arg), reply_to=True)
+		send_answer(ev, core.set_motd(c_user, arg), reply_to=EVENT)
 
 cmd_toggledebug = wrap_core(core.toggle_debug)
 cmd_togglekarma = wrap_core(core.toggle_karma)
@@ -769,11 +821,11 @@ def cmd_tripcode(ev, arg):
 		send_answer(ev, core.get_tripcode(c_user))
 
 
-cmd_modhelp = wrap_core(core.modhelp)
-cmd_adminhelp = wrap_core(core.adminhelp)
+cmd_modhelp = wrap_core(core.modhelp, reply_to=EVENT)
+cmd_adminhelp = wrap_core(core.adminhelp, reply_to=EVENT)
 
 def cmd_version(ev):
-	send_answer(ev, rp.Reply(rp.types.PROGRAM_VERSION, version=VERSION), True)
+	send_answer(ev, rp.Reply(rp.types.PROGRAM_VERSION, version=VERSION), reply_to=EVENT)
 
 cmd_source = cmd_version # alias
 
@@ -782,13 +834,13 @@ cmd_source = cmd_version # alias
 def cmd_modsay(ev, arg):
 	c_user = UserContainer(ev.from_user)
 	arg = escape_html(arg)
-	return send_answer(ev, core.send_mod_message(c_user, arg), True)
+	return send_answer(ev, core.send_mod_message(c_user, arg), reply_to=EVENT)
 
 @takesArgument()
 def cmd_adminsay(ev, arg):
 	c_user = UserContainer(ev.from_user)
 	arg = escape_html(arg)
-	return send_answer(ev, core.send_admin_message(c_user, arg), True)
+	return send_answer(ev, core.send_admin_message(c_user, arg), reply_to=EVENT)
 
 @takesArgument(optional=True, isUsername=True)
 def cmd_mod(ev, arg):
@@ -797,10 +849,10 @@ def cmd_mod(ev, arg):
 		return send_answer(ev, core.promote_user(c_user, arg, RANKS.mod))
 
 	if ev.reply_to_message is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), reply_to=EVENT)
 	user_id = getUserIdFromReply(ev)
 
-	return send_answer(ev, core.promote_user(c_user, user_id, RANKS.mod), True)
+	return send_answer(ev, core.promote_user(c_user, user_id, RANKS.mod), reply_to=EVENT)
 
 @takesArgument(optional=True, isUsername=True)
 def cmd_admin(ev, arg):
@@ -809,27 +861,27 @@ def cmd_admin(ev, arg):
 		return send_answer(ev, core.promote_user(c_user, arg, RANKS.admin))
 
 	if ev.reply_to_message is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), reply_to=EVENT)
 	user_id = getUserIdFromReply(ev)
 
-	return send_answer(ev, core.promote_user(c_user, user_id, RANKS.admin), True)
+	return send_answer(ev, core.promote_user(c_user, user_id, RANKS.admin), reply_to=EVENT)
 
 def cmd_warn(ev, delete=False, only_delete=False):
 	c_user = UserContainer(ev.from_user)
 
 	if ev.reply_to_message is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), reply_to=EVENT)
 
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 	messagetext = ev.reply_to_message.text
 
 	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), reply_to=EVENT)
 	if only_delete:
 		r = core.delete_message(c_user, reply_msid, text=messagetext)
 	else:
 		r = core.warn_user(c_user, reply_msid, delete, text=messagetext)
-	send_answer(ev, r, True)
+	send_answer(ev, r, reply_to=PARENT)
 
 cmd_delete = lambda ev: cmd_warn(ev, delete=True)
 
@@ -842,10 +894,10 @@ def cmd_uncooldown(ev, arg):
 		return send_answer(ev, core.uncooldown_user(c_user, arg))
 
 	if ev.reply_to_message is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), reply_to=EVENT)
 	user_id = getUserIdFromReply(ev)
 
-	return send_answer(ev, core.uncooldown_user(c_user, user_id), True)
+	return send_answer(ev, core.uncooldown_user(c_user, user_id), reply_to=EVENT)
 
 @takesArgument(optional=True, isUsername=True)
 def cmd_whitelist(ev, arg):
@@ -857,7 +909,7 @@ def cmd_whitelist(ev, arg):
 		return send_answer(ev, core.show_whitelist(c_user))
 	user_id = getUserIdFromReply(ev)
 
-	return send_answer(ev, core.whitelist_user(c_user, user_id), True)
+	return send_answer(ev, core.whitelist_user(c_user, user_id), reply_to=EVENT)
 
 @takesArgument(optional=True, isUsername=True)
 def cmd_unwhitelist(ev, arg):
@@ -866,10 +918,10 @@ def cmd_unwhitelist(ev, arg):
 		return send_answer(ev, core.unwhitelist_user(c_user, arg))
 
 	if ev.reply_to_message is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), reply_to=EVENT)
 	user_id = getUserIdFromReply(ev)
 
-	return send_answer(ev, core.unwhitelist_user(c_user, user_id), True)
+	return send_answer(ev, core.unwhitelist_user(c_user, user_id), reply_to=EVENT)
 
 #FIX: This is probably more secure
 # @bot.callback_query_handler(func=lambda call: True)
@@ -892,15 +944,15 @@ def cmd_blacklist(ev, arg):
 		if username:
 			username = removeSensitiveInfo(ev, username)
 			return send_answer(ev, core.blacklist_user(c_user, username, arg))
-		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), reply_to=EVENT)
 
 	messagetext = ev.reply_to_message.text
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), reply_to=EVENT)
 	cm = ch.getMessage(reply_msid)
 
-	return send_answer(ev, core.blacklist_user(c_user, cm.user_id, arg, msid=reply_msid, text=messagetext), True)
+	return send_answer(ev, core.blacklist_user(c_user, cm.user_id, arg, msid=reply_msid, text=messagetext), reply_to=PARENT)
 
 @takesArgument(optional=True, isUsername=True)
 def cmd_unblacklist(ev, arg):
@@ -912,7 +964,7 @@ def cmd_unblacklist(ev, arg):
 
 	user_id = getUserIdFromReply(ev)
 
-	return send_answer(ev, core.unblacklist_user(c_user, user_id), True)
+	return send_answer(ev, core.unblacklist_user(c_user, user_id), reply_to=EVENT)
 
 @takesArgument(optional=True, isUsername=True)
 def cmd_demote(ev, arg):
@@ -924,17 +976,33 @@ def cmd_demote(ev, arg):
 
 	user_id = getUserIdFromReply(ev)
 
-	return send_answer(ev, core.demote_user(c_user, user_id), True)
+	return send_answer(ev, core.demote_user(c_user, user_id), reply_to=EVENT)
 
 def plusone(ev):
 	c_user = UserContainer(ev.from_user)
 	if ev.reply_to_message is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), reply_to=EVENT)
 
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
-	return send_answer(ev, core.give_karma(c_user, reply_msid), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), reply_to=EVENT)
+	return send_answer(ev, core.give_karma(c_user, reply_msid), reply_to=PARENT)
+
+def adminreport(ev):
+	c_user = UserContainer(ev.from_user)
+	# if ev.reply_to_message is None:
+	# 	return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), reply_to=EVENT)
+
+	if ev.reply_to_message:
+		reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+		if reply_msid is None:
+			return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), reply_to=EVENT)
+	else:
+		reply_msid = None
+	m = core.call_admin(c_user, reply_msid)
+	if m.type == rp.types.CUSTOM:
+		bot.send_message(-1001715277064, "<b>ALERT!</b> 🚨\n@admin was called for in the chat.\n\n@DogMikeZC\n@Sneplepblep\n@talkinguser", parse_mode="HTML")
+	return send_answer(ev, m, reply_to=PARENT)
 
 @takesArgument(optional=True, isUsername=True)
 def cmd_reset(ev, arg):
@@ -943,20 +1011,22 @@ def cmd_reset(ev, arg):
 		return send_answer(ev, core.reset_karma(c_user, arg))
 
 	if ev.reply_to_message is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), reply_to=EVENT)
 
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), reply_to=EVENT)
 	cm = ch.getMessage(reply_msid)
 
-	return send_answer(ev, core.reset_karma(c_user, cm.user_id), True)
+	return send_answer(ev, core.reset_karma(c_user, cm.user_id), reply_to=PARENT)
+
+
 
 # This is the entry point for handling messages from Telegram.
 # It just splits off some commands or tripcoded media, then goes to inner.
 def relay(ev):
 	# handle commands and karma giving
-	if ev.chat.id <0:
+	if ev.chat.id < 0 and not (ev.text is not None and ev.text.startswith("/sus")):
 		return
 	if ev.content_type == "text":
 		if ev.text.startswith("/"):
@@ -966,6 +1036,8 @@ def relay(ev):
 			return
 		elif ev.text.strip() == "+1":
 			return plusone(ev)
+		elif ev.text.strip().startswith("@admin"):
+			return adminreport(ev)
 	# manually handle signing / tripcodes for media since captions don't count for commands
 	if not is_forward(ev) and ev.content_type in CAPTIONABLE_TYPES and (ev.caption or "").startswith("/"):
 		c, arg = split_command(ev.caption)
@@ -981,13 +1053,27 @@ def relay(ev):
 # `caption_text` can be a FormattedMessage that overrides the caption of media
 # `expose` and `tripcode` indicate if the message is exposed or tripcoded
 # returns void
-def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
+def relay_inner(ev, *, caption_text=None, expose=False, signed=False, tripcode=False):
 	is_media = is_forward(ev) or ev.content_type in MEDIA_FILTER_TYPES
 	msid = core.prepare_user_message(UserContainer(ev.from_user), calc_spam_score(ev), is_media=is_media, expose=expose, tripcode=tripcode)
 	if msid is None or isinstance(msid, rp.Reply):
 		return send_answer(ev, msid) # don't relay message, instead reply
 
 	user = db.getUser(id=ev.from_user.id)
+
+	if hasattr(ev,"text") and ev.text is not None and ev.text.find("karma") >= 0:
+		cm = ch.getMessage(msid)
+		if cm:
+			cm.locked = True
+		else:
+			logging.info("Just making sure cm always exists.") # FIX: delete later.
+
+	# For signed msgs: check user's forward privacy status first
+	# FIXME? this is a possible bottleneck
+	if signed:
+		tchat = bot.get_chat(user.id)
+		if tchat.has_private_forwards:
+			return send_answer(ev, rp.Reply(rp.types.ERR_SIGN_PRIVACY))
 
 	# apply text formatting to text or caption (if media)
 	ev_tosend = ev
@@ -1000,8 +1086,7 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 		formatter_network_links(fmt)
 		if tripcode or not tripcode_toggle or user.tripcodeToggle:
 			if user.tripcode is None:
-				return send_answer(ev, rp.Reply(rp.types.ERR_NEED_TRIPCODE), False)
-
+				return send_answer(ev, rp.Reply(rp.types.ERR_NEED_TRIPCODE))
 			formatter_tripcoded_message(user, fmt)
 		fmt = fmt.build()
 		if fmt is not None:
@@ -1011,16 +1096,6 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 			ev_tosend = fmt or ev_tosend
 		else:
 			force_caption = fmt
-
-	# find out which message is being replied to
-	reply_msid = None
-	if ev.reply_to_message is not None:
-		reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
-		if reply_msid is None:
-			logging.warning("Message replied to not found in cache")
-
-	# relay message to all other users
-	logging.debug("relay(): msid=%d reply_msid=%r", msid, reply_msid)
 
 	#FIX: All these _push_system_messages should be send_answer
 	if is_media and not media_allowed:
@@ -1071,30 +1146,57 @@ def relay_inner(ev, *, caption_text=None, expose=False, tripcode=False):
 		ev_tosend = ev
 		ev_tosend.from_user = user
 
+	# find out which message is being replied to
+	reply_msid = None
+	if ev.reply_to_message is not None:
+		reply_msid = ch.lookupMapping(user.id, data=ev.reply_to_message.message_id)
+		if reply_msid is None:
+			logging.warning("Message replied to not found in cache")
+			reply_msid = core._push_system_message(rp.Reply(rp.types.CUSTOM,text="<i>[an uncached text]</i>"), except_who=user)
+			ch.saveMapping(user.id, reply_msid, ev.reply_to_message.message_id)
+			logging.info(f"[uncached text] is now cmid {reply_msid}")
+			# Now it is in the cache.
+			
+			# FIX: All system messages should have a standard ID, and when that ID is encountered I should not generate this. Only when the message is completely missing (i.e. the bot has restarted) should I generate these.
+
+
+	# relay message to all other users
+	logging.debug("relay(): msid=%d reply_msid=%r", msid, reply_msid)
+	ch.saveMapping(user.id, msid, ev.message_id)
+
 	for user2 in db.iterateUsers():
 		if not user2.isJoined():
 			continue
 		if user2 == user and not user.debugEnabled:
-			ch.saveMapping(user.id, msid, ev.message_id)
 			continue
 
+		if mute and user.rank < RANKS.admin and user2.rank < RANKS.admin:
+			# return send_answer(ev, rp.Reply(rp.types.CUSTOM, text="<i>The chat has been muted. Others cannot see your post.</i>"))
+			continue
+		if mute and user.rank < RANKS.admin: # test if only admins see this person's messages.
+			logging.info(f"{user2} saw message from {user}!")
+
+		# Stub mapping so that instant sends can be told that there is an EXPECTED msid involved, even if there's none now.
+		# Fix: some places should probably check if msid is -1 and throw a "not found" anyway.
+		ch.saveMapping(user2.id, msid, -1)
 		send_to_single(ev_tosend, msid, user2,
 			reply_msid=reply_msid, force_caption=force_caption)
+
 
 @takesArgument(optional=True, isUsername=True)
 def cmd_exposeto(ev, arg):
 	user = db.getUser(id=ev.from_user.id)
 	if not arg:
-		return send_answer(ev, rp.Reply(rp.types.ERR_EXPOSE_CONFIRM), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_EXPOSE_CONFIRM), reply_to=EVENT)
 
 	if ev.reply_to_message is None:
 		return send_answer(ev, core.expose_to_user(user,None,arg))	
 
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), reply_to=EVENT)
 
-	return send_answer(ev, core.expose_to_user(user,reply_msid,arg), True)	
+	return send_answer(ev, core.expose_to_user(user,reply_msid,arg), reply_to=PARENT)	
 
 #cmd_s = cmd_sign # alias
 
@@ -1107,28 +1209,28 @@ def cmd_lock(ev):
 	c_user = UserContainer(ev.from_user)
 
 	if ev.reply_to_message is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), reply_to=EVENT)
 
 	messagetext = ev.reply_to_message.text
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 
 	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), reply_to=EVENT)
 
-	send_answer(ev, core.lock_message(c_user, reply_msid, text=messagetext), True)
+	send_answer(ev, core.lock_message(c_user, reply_msid, text=messagetext), reply_to=PARENT)
 
 def cmd_unlock(ev):
 	c_user = UserContainer(ev.from_user)
 
 	if ev.reply_to_message is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), reply_to=EVENT)
 
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 
 	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), reply_to=EVENT)
 
-	send_answer(ev, core.unlock_message(c_user, reply_msid), True)
+	send_answer(ev, core.unlock_message(c_user, reply_msid), reply_to=PARENT)
 
 
 @takesArgument(optional=True, isUsername=True)
@@ -1138,14 +1240,14 @@ def cmd_muzzle(ev, arg):
 		return send_answer(ev, core.muzzle_user(c_user, arg))
 
 	if ev.reply_to_message is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), reply_to=EVENT)
 
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), reply_to=EVENT)
 	cm = ch.getMessage(reply_msid)
 
-	return send_answer(ev, core.muzzle_user(c_user, cm.user_id), True)
+	return send_answer(ev, core.muzzle_user(c_user, cm.user_id), reply_to=PARENT)
 
 @takesArgument(optional=True, isUsername=True)
 def cmd_unmuzzle(ev, arg):
@@ -1154,14 +1256,14 @@ def cmd_unmuzzle(ev, arg):
 		return send_answer(ev, core.muzzle_user(c_user, arg, toMuzzle=False))
 
 	if ev.reply_to_message is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), reply_to=EVENT)
 
 	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 	if reply_msid is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), reply_to=EVENT)
 	cm = ch.getMessage(reply_msid)
 
-	return send_answer(ev, core.muzzle_user(c_user, cm.user_id, toMuzzle=False), True)
+	return send_answer(ev, core.muzzle_user(c_user, cm.user_id, toMuzzle=False), reply_to=PARENT)
 
 
 @takesArgument(optional=True, isUsername=True)
@@ -1171,20 +1273,30 @@ def cmd_cleanup(ev, arg):
 		return send_answer(ev, core.cleanup_user(c_user, arg))
 
 	if ev.reply_to_message is None:
-		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), reply_to=EVENT)
 
 	user_id = getUserIdFromReply(ev)
 
-	return send_answer(ev, core.cleanup_user(c_user, user_id), True)
+	return send_answer(ev, core.cleanup_user(c_user, user_id), reply_to=EVENT)
 
 @takesArgument(optional=True)
 def cmd_lockdown(ev, arg):
 	c_user = UserContainer(ev.from_user)
 	if arg:
 		return send_answer(ev, core.engage_lockdown(c_user, arg))
-	return send_answer(ev, core.engage_lockdown(c_user), True)
+	return send_answer(ev, core.engage_lockdown(c_user), reply_to=EVENT)
 
-
+def cmd_mute(ev):
+	global mute
+	user = db.getUser(ev.from_user.id)
+	if not user or user.rank < RANKS.admin:
+		return
+	mute = not mute
+	for admin in db.iterateAdmins():
+		if mute:
+			core._push_system_message(rp.Reply(rp.types.CUSTOM, text="<i>Non-admins have been muted.</i>"), who=admin)
+		else:
+			core._push_system_message(rp.Reply(rp.types.CUSTOM, text="<i>Non-admin voices have been restored.</i>"), who=admin)
 
 cmd_t = cmd_tsign # alias
 cmd_fetch = cmd_info # alias
@@ -1206,7 +1318,7 @@ cmd_rules = cmd_motd # alias #FIX: make a secondary MOTD-like thing in the DB fo
 # 		reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
 
 # 		if reply_msid is None:
-# 			return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+# 			return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), reply_to=EVENT)
 # 		core._push_system_message(rp.Reply(rp.types.CUSTOM,text=ev.text), reply_to=reply_msid, except_who=user)
 
 # 	core._push_system_message(rp.Reply(rp.types.CUSTOM,text=ev.text),except_who=user)

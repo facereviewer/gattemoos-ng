@@ -89,7 +89,7 @@ def getUserByName(username):
 		r_user = None
 		user_count = 0
 		for user in db.iterateUsers():
-			if len(username) < 5 and user.getObfuscatedId() == username:
+			if user.getObfuscatedId() == username:
 				r_user = user	
 				user_count+=1
 		if user_count <= 1:
@@ -101,6 +101,7 @@ def getUserByName(username):
 		for user in db.iterateUsers():
 			if user.tripname is not None and user.tripname+user.triphash == username:
 				r_user = user
+				user_count += 1
 		if user_count <= 1:
 			return r_user
 		return -1
@@ -246,6 +247,7 @@ def user_join(c_user):
 		if user.isBlacklisted():
 			logging.info("%s tried to join, but was blacklisted", user)
 			err = rp.Reply(rp.types.ERR_BLACKLISTED, reason=user.blacklistReason, contact=blacklist_contact)
+
 		elif not allowed:
 			logging.info("%s tried to join", user)
 			if user.join_attempts < 2:
@@ -340,12 +342,12 @@ def user_leave(user):
 
 @requireUser
 @requireRank(RANKS.mod)
-def modhelp(c_user):
+def modhelp(user):
 	return rp.Reply(rp.types.HELP_MODERATOR)
 
 @requireUser
 @requireRank(RANKS.admin)
-def adminhelp(c_user):
+def adminhelp(user):
 	return rp.Reply(rp.types.HELP_ADMIN)
 
 @requireUser
@@ -628,21 +630,21 @@ def uncooldown_user(user, username):
 
 @requireUser
 @requireRank(RANKS.admin)
-def show_whitelist(c_user):
+def show_whitelist(user):
 	# if not whitelist:
 	# 	return rp.Reply(rp.types.WHITELIST_NOT_ON)
 	buttons = []
-	for user in db.iterateUsers(order_by="joined",order_desc=True):
+	for user2 in db.iterateUsers(order_by="joined",order_desc=True):
 		try:
-			db.getWhitelistedUser(id=user.id)
+			db.getWhitelistedUser(id=user2.id)
 		except KeyError as e:
-			if not user.isBlacklisted():
-				# tag = "@"+user.username if user.username else user.realname
-				tag = user.getAnonymizedName()
-				tag += " (" + (user.joined-timedelta(hours=1)).strftime("%b %d %H:%M")+"Z)"
+			if not user2.isBlacklisted():
+				# tag = "@"+user2.username if user2.username else user2.realname
+				tag = user2.getAnonymizedName()
+				tag += " (" + (user2.joined-timedelta(hours=1)).strftime("%b %d %H:%M")+"Z)"
 				buttons.append([{
 					"text": tag,
-					"callback_data": "whitelist_"+str(user.id)
+					"callback_data": "whitelist_"+str(user2.id)
 				}])
 	if not len(buttons):
 		return rp.Reply(rp.types.ERR_NO_WAITLIST)
@@ -655,7 +657,7 @@ def show_whitelist(c_user):
 
 @requireUser
 @requireRank(RANKS.admin)
-def whitelist_user(c_user, username):
+def whitelist_user(user, username):
 	user2 = getUserByName(username)
 	if user2 == -1:
 		return rp.Reply(rp.types.ERR_COLLISION)
@@ -667,7 +669,7 @@ def whitelist_user(c_user, username):
 		return rp.Reply(rp.types.ERR_ALREADY_WHITELISTED)
 	except KeyError as e:
 		db.addWhitelistedUser(user2.id)
-	logging.info("%s was whitelisted by %s", user2, c_user)
+	logging.info("%s was whitelisted by %s", user2, user)
 	# FIX: if user2.left is not None or something like that.
 	if user2.rank > RANKS.banned:
 		_push_system_message(rp.Reply(rp.types.CUSTOM, text="<i>You have been whitelisted!\nPlease use</i> /start <i>to start the bot.</i>"),who=user2)
@@ -675,21 +677,21 @@ def whitelist_user(c_user, username):
 
 @requireUser
 @requireRank(RANKS.admin)
-def unwhitelist_user(c_user, username):
+def unwhitelist_user(user, username):
 	user2 = getUserByName(username)
 	if user2 == -1:
 		return rp.Reply(rp.types.ERR_COLLISION)
 	elif user2 is None:
 		return rp.Reply(rp.types.ERR_NO_USER)
 
-	if user2.rank >= c_user.rank:
+	if user2.rank >= user.rank:
 		return rp.Reply(rp.types.CUSTOM, text="<i>You cannot remove someone of the same rank or higher from the whitelist.</i>")
 	try:
 		db.getWhitelistedUser(user2.id)
 		db.addWhitelistedUser(user2.id, toWhitelist=False)
 	except KeyError as e:
 		return rp.Reply(rp.types.ERR_NOTHING_TO_DO)
-	logging.info("%s was unwhitelisted by %s", user2, c_user)
+	logging.info("%s was unwhitelisted by %s", user2, user)
 	return rp.Reply(rp.types.SUCCESS)
 
 @requireUser
@@ -774,15 +776,15 @@ def unblacklist_user(user, username):
 
 @requireUser
 @requireRank(RANKS.admin)
-def show_unblacklist(c_user):
+def show_unblacklist(user):
 	buttons = []
-	for user in db.iterateUsers(order_by="left",order_desc=True):
-		if user.isBlacklisted():
+	for user2 in db.iterateUsers(order_by="left",order_desc=True):
+		if user2.isBlacklisted():
 			# tag = "@"+user.username if user.username else user.realname
-			tag = user.getAnonymizedName()
+			tag = user2.getAnonymizedName()
 			buttons.append([{
 				"text": tag,
-				"callback_data": "unblacklist_"+str(user.id)
+				"callback_data": "unblacklist_"+str(user2.id)
 			}])
 	if not len(buttons):
 		return rp.Reply(rp.types.ERR_NO_UNBLACKLIST)
@@ -795,17 +797,17 @@ def show_unblacklist(c_user):
 #FIX: add reply_to demote
 @requireUser
 @requireRank(RANKS.admin)
-def show_demotelist(c_user):
+def show_demotelist(user):
 	buttons = []
-	for user in db.iterateUsers():
-		# if user.rank > RANKS.user and user.id != c_user.id:
-		if user.rank > RANKS.user and user.rank < c_user.rank and user.id != c_user.id:
-			tag = user.getAnonymizedName()
-			if user.rank > RANKS.mod:
+	for user2 in db.iterateUsers():
+		# if user2.rank > RANKS.user and user2.id != user.id:
+		if user2.rank > RANKS.user and user2.rank < user.rank and user2.id != user.id:
+			tag = user2.getAnonymizedName()
+			if user2.rank > RANKS.mod:
 				tag += "🌟"
 			buttons.append([{
 				"text": tag,
-				"callback_data": "demote_"+str(user.id)
+				"callback_data": "demote_"+str(user2.id)
 			}])
 	if not len(buttons):
 		return rp.Reply(rp.types.ERR_NO_LIST)
@@ -817,8 +819,8 @@ def show_demotelist(c_user):
 
 @requireUser
 @requireRank(RANKS.mod)
-def demote_user(c_user, username):
-	if isTooSensitive(username, c_user):
+def demote_user(user, username):
+	if isTooSensitive(username, user):
 		return rp.Reply(rp.types.ERR_ADMIN_SEARCH)
 
 	user2 = getUserByName(username)
@@ -827,14 +829,14 @@ def demote_user(c_user, username):
 	elif user2 is None:
 		return rp.Reply(rp.types.ERR_NO_USER)
 
-	if user2.id == c_user.id:
+	if user2.id == user.id:
 		return rp.Reply(rp.types.CUSTOM, text="<i>You cannot demote yourself.</i>")
 
 	with db.modifyUser(id=user2.id) as user2:
-		if user2.rank >= c_user.rank:
+		if user2.rank >= user.rank:
 			return rp.Reply(rp.types.CUSTOM, text="<i>You can't demote someone of higher or equal rank.</i>")
 		user2.rank = RANKS.user
-	logging.info("%s was demoted by %s", user2, c_user)
+	logging.info("%s was demoted by %s", user2, user)
 	if not user2.left:
 		_push_system_message(rp.Reply(rp.types.DEMOTED), who=user2)
 	return rp.Reply(rp.types.SUCCESS)
@@ -842,8 +844,8 @@ def demote_user(c_user, username):
 	
 @requireUser
 @requireRank(RANKS.mod)
-def cleanup_user(c_user, username):
-	if isTooSensitive(username, c_user):
+def cleanup_user(user, username):
+	if isTooSensitive(username, user):
 		return rp.Reply(rp.types.ERR_ADMIN_SEARCH)
 
 	user2 = getUserByName(username)
@@ -852,15 +854,15 @@ def cleanup_user(c_user, username):
 	elif user2 is None:
 		return rp.Reply(rp.types.ERR_NO_USER)
 
-	if user2.id == c_user.id:
+	if user2.id == user.id:
 		return rp.Reply(rp.types.CUSTOM, text="<i>You cannot clean yourself. &gt;:3</i>")
 	if user2.rank > RANKS.banned:
 		return rp.Reply(rp.types.CUSTOM, text="<i>That user has not been banned.</i>")
 
 	for msid in ch.allMappings(user2.id):
-		Sender.delete(msid, c_user.id)
+		Sender.delete(msid, user.id)
 
-	logging.info("The posts of %s were cleaned up by %s", user2, c_user)
+	logging.info("The posts of %s were cleaned up by %s", user2, user)
 	return rp.Reply(rp.types.SUCCESS)
 
 	
@@ -876,8 +878,9 @@ def give_karma(user, msid):
 	if user.id == cm.user_id:
 		return rp.Reply(rp.types.ERR_UPVOTE_OWN_MESSAGE)
 
-	user = db.getUser(id=user.id)
 	user2 = db.getUser(id=cm.user_id)
+
+
 
 	if cm.locked:
 		return rp.Reply(rp.types.CUSTOM, text="<i>This message has been locked by mods.</i>")
@@ -888,13 +891,32 @@ def give_karma(user, msid):
 		if not user2.hideKarma and not user2.left:
 			_push_system_message(rp.Reply(rp.types.KARMA_NOTIFICATION), who=user2, reply_to=msid)
 
+
+
 	logging.info("%s gave %s +1 karma.",user, user2)
 	return rp.Reply(rp.types.KARMA_THANK_YOU)
 
 @requireUser
+def call_admin(user, msid):
+	cm = None
+	if msid:
+		cm = ch.getMessage(msid)
+		if cm is None or cm.user_id is None:
+			return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
+
+	if cm:
+		user2 = db.getUser(id=cm.user_id)
+
+	for admin in db.iterateAdmins():
+		_push_system_message(rp.Reply(rp.types.CUSTOM,text="<b><u>ALERT</u></b> 🚨\n\n<i>This was a system alert called by user "+user.getObfuscatedId()+".</i>"), who=admin,reply_to=msid)
+
+	logging.info("%s called the admins.",user)
+	return rp.Reply(rp.types.CUSTOM, text="<i>You have called attention to this message.</i>")
+
+@requireUser
 @requireRank(RANKS.admin)
-def reset_karma(c_user, username):
-	if isTooSensitive(username, c_user):
+def reset_karma(user, username):
+	if isTooSensitive(username, user):
 		return rp.Reply(rp.types.ERR_ADMIN_SEARCH)
 
 	user2 = getUserByName(username)
@@ -903,14 +925,14 @@ def reset_karma(c_user, username):
 	elif user2 is None:
 		return rp.Reply(rp.types.ERR_NO_USER)
 
-	if user2.id == c_user.id and user2.karma > 0:
+	if user2.id == user.id and user2.karma > 0:
 		return rp.Reply(rp.types.CUSTOM, text="<i>You cannot eliminate your own karma. &gt;:3</i>")
 	if user2.rank > RANKS.user and user2.karma > 0:
 		return rp.Reply(rp.types.CUSTOM, text="<i>Mods have karmic protection.</i>")
 
 	with db.modifyUser(id=user2.id) as user2:
 		user2.karma = 0
-		logging.info("%s reset the karma of %s", c_user, user2)
+		logging.info("%s reset the karma of %s", user, user2)
 	return rp.Reply(rp.types.CUSTOM, text="<i>This user's karma was reset.</i>")
 
 @requireUser
@@ -942,7 +964,7 @@ def engage_lockdown(user, arg=None):
 
 @requireUser
 @requireRank(RANKS.mod)
-def lock_message(c_user, msid, text="media"):
+def lock_message(user, msid, text="media"):
 	cm = ch.getMessage(msid)
 	if cm is None or cm.user_id is None:
 		return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
@@ -956,13 +978,13 @@ def lock_message(c_user, msid, text="media"):
 		cm.locked = True
 	else:
 		return rp.Reply(rp.types.CUSTOM, text="<i>This message has already been locked.</i>")
-	logging.info("%s locked a message from %s%s", c_user, user2, "\nMessage: " + text or "")
+	logging.info("%s locked a message from %s%s", user, user2, "\nMessage: " + text or "")
 
 	return rp.Reply(rp.types.CUSTOM, text="<i>This message was locked</i>")
 
 @requireUser
 @requireRank(RANKS.mod)
-def unlock_message(c_user, msid):
+def unlock_message(user, msid):
 	cm = ch.getMessage(msid)
 	if cm is None or cm.user_id is None:
 		return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
@@ -973,14 +995,14 @@ def unlock_message(c_user, msid):
 		cm.locked = False
 	else:
 		return rp.Reply(rp.types.CUSTOM, text="<i>This message wasn't locked.</i>")
-	logging.info("%s unlocked a message from %s", c_user, user2)
+	logging.info("%s unlocked a message from %s", user, user2)
 
 	return rp.Reply(rp.types.CUSTOM, text="<i>This message was unlocked</i>")
 
 @requireUser
 @requireRank(RANKS.admin)
-def muzzle_user(c_user, username, toMuzzle=True):
-	if isTooSensitive(username, c_user):
+def muzzle_user(user, username, toMuzzle=True):
+	if isTooSensitive(username, user):
 		return rp.Reply(rp.types.ERR_ADMIN_SEARCH)
 
 	user2 = getUserByName(username)
@@ -991,22 +1013,21 @@ def muzzle_user(c_user, username, toMuzzle=True):
 
 	if user2.muzzled and toMuzzle:
 		return rp.Reply(rp.types.CUSTOM, text="<i>That user is already muzzled.</i>")
-	if user2.id == c_user.id:
+	if user2.id == user.id:
 		return rp.Reply(rp.types.CUSTOM, text="<i>You cannot muzzle yourself. &gt;:3</i>")
 	if user2.rank > RANKS.user:
 		return rp.Reply(rp.types.CUSTOM, text="<i>You cannot muzzle mods.</i>")
 
 	with db.modifyUser(id=user2.id) as user2:
 		user2.muzzled = toMuzzle
-		logging.info("%s %smuzzled %s", c_user, "" if toMuzzle else "un", user2)
+		logging.info("%s %smuzzled %s", user, "" if toMuzzle else "un", user2)
 	return rp.Reply(rp.types.CUSTOM, text="<i>This user was "+("" if toMuzzle else "un")+"muzzled</i>")
 
 @requireUser
-def expose_to_user(c_user, msid, username):
+def expose_to_user(user, msid, username):
 	if not enable_expose:
 		return rp.Reply(rp.types.ERR_COMMAND_DISABLED)
 
-	c_user = db.getUser(id=c_user.id)
 	user2 = None
 
 	if msid is not None:
@@ -1021,7 +1042,7 @@ def expose_to_user(c_user, msid, username):
 	else:
 		if username == "yes":
 			return rp.Reply(rp.types.ERR_NO_REPLY)
-		if isTooSensitive(username, c_user):
+		if isTooSensitive(username, user):
 			return rp.Reply(rp.types.ERR_ADMIN_SEARCH)
 		user2 = getUserByName(username)
 		if user2 == -1:
@@ -1029,17 +1050,17 @@ def expose_to_user(c_user, msid, username):
 	
 	if user2 is None:
 		return rp.Reply(rp.types.ERR_NO_USER)
-
-	user = {
-		"name": c_user.getAnonymizedName(),
-		"link":c_user.getIdLink(c_user.getFormattedName())
-	}
-	logging.info("%s has revealed theirself to %s", c_user, user2)
+	
+	logging.info("%s has revealed theirself to %s", user, user2)
 	if user2.left:
 		logging.info("(But it failed because they were away)")
 		return rp.Reply(rp.types.CUSTOM, text="<i>Sorry, anon is away.</i>")
 
-	if not user2.muzzled and not c_user.muzzled:
+	if not user2.muzzled and not user.muzzled and (user.rank >= RANKS.mod or user2.rank >= RANKS.mod):
+		user = {
+			"name": user.getAnonymizedName(),
+			"link":user.getIdLink(user.getFormattedName())
+		}
 		_push_system_message(rp.Reply(rp.types.EXPOSE_TO,**user), who=user2)
 	return rp.Reply(rp.types.EXPOSED)
 
@@ -1065,8 +1086,9 @@ def prepare_user_message(user: User, msg_score, *, is_media=False, expose=False,
 # who is None -> to everyone except the user <except_who> (if applicable)
 # who is not None -> only to the user <who>
 # reply_to: msid the message is in reply to
-def _push_system_message(m, *, who=None, except_who=None, reply_to=None):
-	msid = None
-	if who is None: # we only need an ID if multiple people can see the msg
+# msid: overrides which cm this new message will be linked to.
+def _push_system_message(m, *, who=None, except_who=None, reply_to=None, msid=None):
+	if who is None and msid is None: # we only need an ID if multiple people can see the msg
 		msid = ch.assignMessageId(CachedMessage())
 	Sender.reply(m, msid, who, except_who, reply_to)
+	return msid
