@@ -4,7 +4,7 @@ import logging
 from queue import PriorityQueue
 from threading import Lock
 from datetime import timedelta
-from crypt import crypt
+from passlib.hash import pbkdf2_sha512
 
 class Scheduler():
 	def __init__(self):
@@ -85,18 +85,17 @@ def _salt(c):
 	return '.'
 
 def genTripcode(tripcode, salt):
-	# Doesn't match 4chan's algorithm.
-	pos = tripcode.find("#")
-	trname = tripcode[:pos]
-	trpass = tripcode[pos+1:]
+    pos = tripcode.find("#")
+    trname = tripcode[:pos]
+    trpass = tripcode[pos + 1:]
 
-	# The random user salt would guarantee that the tripcode isn't in a rainbow table somewhere. But it would mean they can't join on a different account with the same tripcode.
-	# We'll overwrite it here so that it can be used across clients. To get around security limitations, we'll do some key stretching.
-	salt = (trpass[:8] + 'H.')[1:3]
-	salt = "".join(_salt(c) for c in salt)
+    salt = (trpass[:8] + 'H.')[1:3]
+    salt = "".join(_salt(c) for c in salt)
+    salt = salt.encode('utf-8')  # Convert salt to bytes
 
-	trip_final = crypt(trpass[:8], salt)
-	for x in range(0,9937):
-		trip_final = crypt(trip_final[:8], salt)
+    # Here we use the passlib.pbkdf2_sha512 with the salt
+    trip_final = pbkdf2_sha512.hash(trpass[:8], salt=salt, rounds=1)
+    for x in range(0, 9937):
+        trip_final = pbkdf2_sha512.hash(trip_final[:8], salt=salt, rounds=1)
 
-	return trname, "!" + trip_final[-10:]
+    return trname, "!" + trip_final[-10:]
