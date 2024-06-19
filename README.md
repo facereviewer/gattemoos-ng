@@ -1,7 +1,7 @@
 secretlounge-ng
 ---------------
 Rewrite of [secretlounge](https://github.com/6697/secretlounge), a bot to make an anonymous group chat on Telegram.
-Further rewritten for furry purposes. This version is pseudonymous instead of anonymous (though it still supports anonymous mode).
+This version is pseudonymous instead of anonymous (though it still supports anonymous mode).
 
 
 ## @BotFather Setup
