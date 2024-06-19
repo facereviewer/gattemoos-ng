@@ -14,6 +14,8 @@ ch = None # Cache
 spam_scores = None
 tripcode_last_used = {} # uid -> datetime
 
+bot_name = None
+log_channel = None
 whitelist = None
 lockdown = None
 blacklist_contact = None
@@ -24,11 +26,15 @@ tripcode_interval = None
 tripcode_toggle = None
 
 def init(config, _db, _ch):
-	global db, ch, spam_scores, whitelist, lockdown, blacklist_contact, enable_expose, allow_remove_command, media_limit_period, tripcode_interval, tripcode_toggle
+	global db, ch, bot_name, spam_scores, log_channel, whitelist, lockdown, blacklist_contact, enable_expose, allow_remove_command, media_limit_period, tripcode_interval, tripcode_toggle
 	db = _db
 	ch = _ch
 	spam_scores = ScoreKeeper()
 
+	log_channel = config.get("log_channel", False)
+	if log_channel:
+		logging.info("Log channel: %d", log_channel)
+	bot_name = config.get("bot_name", "")
 	whitelist = config.get("whitelist",False)
 	lockdown = False
 	blacklist_contact = config.get("blacklist_contact", "")
