@@ -22,6 +22,11 @@ allow_edits: true
 # Limit usage of /tripcode to once in every X hours
 tripcode_limit_interval: 0.16
 
+# channel id the bot should post log entries into
+# defaults to false (no channel logging), the ID starts with -100...
+# bot needs to be admin in channel
+#log_channel: false
+
 # point of contact shown to blacklisted users
 #blacklist_contact: http://t.me/invite/something
 
