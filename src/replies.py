@@ -35,6 +35,7 @@ types = NumericEnum([
 	"CHAT_JOIN",
 	"CHAT_LEAVE",
 	"USER_IN_CHAT",
+	"LOG_CHANNEL",
 	"USER_NOT_IN_CHAT",
 	"GIVEN_COOLDOWN",
 	"MESSAGE_DELETED",
@@ -120,6 +121,7 @@ format_strs = {
 
 	types.CHAT_JOIN: em("You joined the chat!"),
 	types.CHAT_LEAVE: em("You left the chat!"),
+	types.LOG_CHANNEL: "gattemoos-ng started",
 	types.USER_IN_CHAT: em("You're already in the chat."),
 	types.USER_NOT_IN_CHAT: em("You're not in the chat yet. Use /start to join!"),
 	types.GIVEN_COOLDOWN: lambda deleted, **_:
