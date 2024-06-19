@@ -751,7 +751,20 @@ class MyReceiver(core.Receiver):
 #dict list parse except
 #json.dumps(msg, default=lambda o: o.__dict__, sort_keys=True, indent=4)
 
+# Custom logger mapping to specified channel
 
+def log_into_channel(msg, html=False):
+	try:
+		if (bot is not None) and core.log_channel:
+			bot.send_message(core.log_channel, msg, parse_mode= "HTML" if html else None)
+	except:
+		pass
+
+class ChannelHandler(logging.StreamHandler):
+	def emit(self, record):
+		log_into_channel(self.format(record))
+
+####
 
 
 
